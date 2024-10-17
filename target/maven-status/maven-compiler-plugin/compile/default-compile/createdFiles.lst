@@ -1,4 +1,6 @@
 Example.class
+GpsGUI.class
 GpsService$GpsInput.class
 GpsService.class
 GpsEvent.class
+GuiOutline.class
