@@ -87,46 +87,73 @@ public class GuiOutline {
     }
 
     private JPanel createControlPanel() {
-        JPanel controlPanel = new JPanel(new GridBagLayout());
-        controlPanel.setBorder(BorderFactory.createTitledBorder("Control Panel"));
-        controlPanel.setPreferredSize(new Dimension(1200, 150)); // Fixed height to prevent shrinking
+        // Create three panels for the three parts
+        JPanel inputPanel = createInputPanel();
+        JPanel buttonPanel = createButtonPanel();
+        JPanel labelPanel = createLabelPanel();
 
+        // First split: between inputPanel and buttonPanel
+        JSplitPane splitPane1 = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, inputPanel, buttonPanel);
+        splitPane1.setResizeWeight(0.6); // More space for input fields
+
+        // Second split: between buttonPanel and labelPanel
+        JSplitPane splitPane2 = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, splitPane1, labelPanel);
+        splitPane2.setResizeWeight(0.8); // More space for button area
+
+        // Wrap in a main control panel
+        JPanel mainControlPanel = new JPanel(new BorderLayout());
+        mainControlPanel.add(splitPane2, BorderLayout.CENTER);
+        mainControlPanel.setBorder(BorderFactory.createTitledBorder("Control Panel"));
+        return mainControlPanel;
+    }
+
+    private JPanel createInputPanel() {
+        JPanel inputPanel = new JPanel(new GridBagLayout());
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(5, 5, 5, 5);
         gbc.fill = GridBagConstraints.HORIZONTAL;
 
-        // Add input fields and labels
-        gbc.gridx = 0; gbc.gridy = 0; gbc.weightx = 0.3;
-        controlPanel.add(new JLabel("Min Lat:"), gbc);
-        gbc.gridx = 1; gbc.weightx = 0.7;
-        controlPanel.add(createCompactTextField(), gbc);
+        gbc.gridx = 0; gbc.gridy = 0;
+        inputPanel.add(new JLabel("Min Lat:"), gbc);
+        gbc.gridx = 1;
+        inputPanel.add(createCompactTextField(), gbc);
 
-        gbc.gridx = 0; gbc.gridy = 1; gbc.weightx = 0.3;
-        controlPanel.add(new JLabel("Max Lat:"), gbc);
-        gbc.gridx = 1; gbc.weightx = 0.7;
-        controlPanel.add(createCompactTextField(), gbc);
+        gbc.gridx = 0; gbc.gridy = 1;
+        inputPanel.add(new JLabel("Max Lat:"), gbc);
+        gbc.gridx = 1;
+        inputPanel.add(createCompactTextField(), gbc);
 
-        gbc.gridx = 0; gbc.gridy = 2; gbc.weightx = 0.3;
-        controlPanel.add(new JLabel("Min Lon:"), gbc);
-        gbc.gridx = 1; gbc.weightx = 0.7;
-        controlPanel.add(createCompactTextField(), gbc);
+        gbc.gridx = 0; gbc.gridy = 2;
+        inputPanel.add(new JLabel("Min Lon:"), gbc);
+        gbc.gridx = 1;
+        inputPanel.add(createCompactTextField(), gbc);
 
-        gbc.gridx = 0; gbc.gridy = 3; gbc.weightx = 0.3;
-        controlPanel.add(new JLabel("Max Lon:"), gbc);
-        gbc.gridx = 1; gbc.weightx = 0.7;
-        controlPanel.add(createCompactTextField(), gbc);
+        gbc.gridx = 0; gbc.gridy = 3;
+        inputPanel.add(new JLabel("Max Lon:"), gbc);
+        gbc.gridx = 1;
+        inputPanel.add(createCompactTextField(), gbc);
 
-        // Add button and label for setting restrictions
-        gbc.gridx = 2; gbc.gridy = 0; gbc.gridheight = 2;
-        gbc.weightx = 1.0; gbc.anchor = GridBagConstraints.CENTER;
+        return inputPanel;
+    }
+
+    private JPanel createButtonPanel() {
+        JPanel buttonPanel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.anchor = GridBagConstraints.CENTER;
         JButton setRestrictionButton = new JButton("Set");
-        controlPanel.add(setRestrictionButton, gbc);
+        buttonPanel.add(setRestrictionButton, gbc);
+        return buttonPanel;
+    }
 
-        gbc.gridy = 2; gbc.gridheight = 2;
+    private JPanel createLabelPanel() {
+        JPanel labelPanel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.anchor = GridBagConstraints.CENTER;
         JLabel restrictionValueLabel = new JLabel("Current Restriction: None");
-        controlPanel.add(restrictionValueLabel, gbc);
-
-        return controlPanel;
+        labelPanel.add(restrictionValueLabel, gbc);
+        return labelPanel;
     }
 
     private JTextField createCompactTextField() {
@@ -138,4 +165,5 @@ public class GuiOutline {
     public void show() {
         frame.setVisible(true);
     }
+
 }
