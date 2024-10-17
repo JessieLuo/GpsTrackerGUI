@@ -8,7 +8,7 @@ public class GpsGUI {
     }
 
     public static void main(String[] args) {
-        GuiFrame gui = new GuiFrame();
+        GuiOutline gui = new GuiOutline();
         gui.show();
         // Initialize the GPS Service
         GpsService gpsService = new GpsService();
