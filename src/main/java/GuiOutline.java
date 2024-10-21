@@ -1,11 +1,25 @@
+import nz.sodium.Cell;
+import nz.sodium.CellLoop;
+import nz.sodium.Stream;
+import nz.sodium.Transaction;
+import swidgets.SLabel;
+
 import javax.swing.*;
 import java.awt.*;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Arrays;
+import java.util.List;
 
 public class GuiOutline {
+    // Formatter to display time in HH:mm:ss format
+    private static final DateTimeFormatter TIME_FORMATTER = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss");
     private final JFrame frame = new JFrame("GPS Tracking Application");
+    private final Stream<GpsEvent>[] gpsStreams;
 
-    public GuiOutline() {
+    public GuiOutline(Stream<GpsEvent>[] gpsStreams) {
         // Initialize the GUI components
+        this.gpsStreams = gpsStreams;
         initializeComponents();
     }
 
@@ -14,16 +28,18 @@ public class GuiOutline {
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame.setSize(1200, 800); // Proper window size to accommodate components
 
-        // 1. All Tracker Display Panel (Simulated Table) and Real-time Info
-        JPanel allTrackerDisplayPanel = createTrackerDisplayPanel("All Tracker Display", false);
-        JPanel allTrackerInfoPanel = createCurrentTrackerPanel();
+        // 1. All Tracker Display Panel and Real-time Info
+        JPanel allTrackerDisplayPanel = TrackerDisplayPanel("All Tracker Display", gpsStreams);
+        // Merge all streams into one stream for the current event panel
+        Stream<GpsEvent> currentEventStream = mergeAllStreams(gpsStreams);
+        JPanel currentTrackerPanel = CurrentTrackerPanel(currentEventStream);
 
         // 2. Filtered Tracker Display Panel and Control Panel
-        JPanel filteredTrackerDisplayPanel = createTrackerDisplayPanel("Filtered Tracker Display", true);
-        JPanel controlPanel = createControlPanel();
+        JPanel filteredTrackerDisplayPanel = TrackerDisplayPanel("Filtered Tracker Display", gpsStreams);
+        JPanel controlPanel = ControlPanel();
 
         // Combine the left display panel with its corresponding info panel using JSplitPane
-        JSplitPane allTrackerSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, allTrackerDisplayPanel, allTrackerInfoPanel);
+        JSplitPane allTrackerSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, allTrackerDisplayPanel, currentTrackerPanel);
         allTrackerSplitPane.setResizeWeight(0.8); // Give more space to the display panel
 
         // Combine the right display panel with the control panel using JSplitPane
@@ -39,58 +55,136 @@ public class GuiOutline {
         frame.add(mainPanel, BorderLayout.CENTER);
     }
 
-    private JPanel createTrackerDisplayPanel(String title, boolean includeDistance) {
-        // Create a panel with a grid layout to simulate the table
-        int columnCount = includeDistance ? 5 : 4; // Columns: Tracker No, Lat, Lon, Time, [Distance]
-        JPanel panel = new JPanel(new GridLayout(10 + 1, columnCount, 5, 5)); // +1 for the header row
+    // Create a panel to display all tracker events
+    public JPanel TrackerDisplayPanel(String title, Stream<GpsEvent>[] eventStreams) {
+        int columnCount = 3; // Columns: Tracker ID, Lat, Lon
+        int rowCount = eventStreams.length;
+        JPanel panel = new JPanel(new GridLayout(rowCount + 1, columnCount, 5, 5)); // +1 for the header row
         panel.setBorder(BorderFactory.createTitledBorder(title));
 
         // Header row
-        panel.add(new JLabel("Tracker No"));
+        panel.add(new JLabel("ID"));
         panel.add(new JLabel("Latitude"));
         panel.add(new JLabel("Longitude"));
-        panel.add(new JLabel("Timestamp"));
-        if (includeDistance) {
-            panel.add(new JLabel("Distance"));
-        }
 
-        // Data rows (empty for modeling purposes)
-        for (int i = 0; i < 10; i++) {
-            panel.add(new JLabel(String.valueOf(i + 1))); // Display only the tracker number
-            panel.add(new JTextField(10)); // Latitude field
-            panel.add(new JTextField(10)); // Longitude field
-            panel.add(new JTextField(12)); // Timestamp field
-            if (includeDistance) {
-                panel.add(new JTextField(8)); // Distance field
-            }
+        // Data rows for each stream
+        for (Stream<GpsEvent> evStream : eventStreams) {
+            addTrackerLabelsToPanel(evStream, panel);
         }
 
         return panel;
     }
 
-    private JPanel createCurrentTrackerPanel() {
+    // Helper method to add labels for a single stream of tracker data
+    private void addTrackerLabelsToPanel(Stream<GpsEvent> evStream, JPanel panel) {
+        // Hold the current GpsEvent in a Cell
+        Cell<GpsEvent> gpsEventCell = evStream.hold(null);
+
+        List<Cell<String>> cells = createBasicFields(gpsEventCell);
+
+        // Create SLabels for the extracted values
+        SLabel trackerIdLabel = new SLabel(cells.get(0));
+        SLabel latLabel = new SLabel(cells.get(1));
+        SLabel lonLabel = new SLabel(cells.get(2));
+
+        // Add the created SLabels to the panel
+        panel.add(trackerIdLabel);
+        panel.add(latLabel);
+        panel.add(lonLabel);
+    }
+
+    // Create a panel to display the current tracker event with clear mechanism after 3 seconds
+    public JPanel CurrentTrackerPanel(Stream<GpsEvent> gpsEventStream) {
         // Create a panel for real-time tracker information
         JPanel panel = new JPanel(new GridLayout(1, 4, 5, 5)); // Single row for real-time data
         panel.setBorder(BorderFactory.createTitledBorder("Current Event"));
 
-        // Labels to show tracker info
-        panel.add(new JLabel("Tracker No:"));
-        panel.add(new JTextField(10)); // Tracker number field
-        panel.add(new JLabel("Latitude:"));
-        panel.add(new JTextField(10)); // Latitude field
-        panel.add(new JLabel("Longitude:"));
-        panel.add(new JTextField(10)); // Longitude field
-        panel.add(new JLabel("Timestamp:"));
-        panel.add(new JTextField(12)); // Timestamp field
+        Transaction.runVoid(() -> {
+            // Hold the current GpsEvent in a Cell to track real-time changes
+            CellLoop<GpsEvent> gpsEventCell = new CellLoop<>();
+            gpsEventCell.loop(gpsEventStream.hold(null));
+
+            // Create reactive Cells for each field (Tracker ID, Latitude, Longitude, Timestamp)
+            List<Cell<String>> cells = createBasicFields(gpsEventCell);
+            Cell<String> timeCell = gpsEventCell.map(ev -> ev != null ? LocalDateTime.now().format(TIME_FORMATTER) : ""); // Timestamp
+
+            // Create SLabels to display the reactive Cells
+            SLabel trackerIdLabel = new SLabel(cells.get(0));
+            SLabel latLabel = new SLabel(cells.get(1));
+            SLabel lonLabel = new SLabel(cells.get(2));
+            SLabel timeLabel = new SLabel(timeCell);
+
+            // Add labels and real-time SLabels to display the current GPS event data
+            panel.add(trackerIdLabel);
+            panel.add(latLabel);
+            panel.add(lonLabel);
+            panel.add(timeLabel);
+
+            // Set up the 3-second timer to clear the display if no new event arrives
+            Timer[] clearTimer = {null}; // Reference to the active timer
+
+            gpsEventStream.listen(ev -> {
+                // Cancel the previous timer if still running
+                if (clearTimer[0] != null) {
+                    clearTimer[0].stop();
+                }
+
+                // Make sure fields are updated when a new event arrives
+                trackerIdLabel.setText(ev.name);
+                latLabel.setText(Double.toString(ev.latitude));
+                lonLabel.setText(Double.toString(ev.longitude));
+                timeLabel.setText(LocalDateTime.now().format(TIME_FORMATTER));
+
+                // Create and start a new 3-second timer to clear the display
+                clearTimer[0] = new Timer(3000, e -> {
+                    // Ensure we only clear the fields if no new event has arrived
+                    if (!trackerIdLabel.getText().equals(ev.name)) {
+                        return; // A new event has arrived; don't clear the fields
+                    }
+                    timeLabel.setText("");
+                    latLabel.setText("");
+                    lonLabel.setText("");
+                    trackerIdLabel.setText("");
+                });
+                clearTimer[0].setRepeats(false); // Ensure the timer runs only once
+                clearTimer[0].start();
+            });
+        });
 
         return panel;
     }
 
-    private JPanel createControlPanel() {
+    // Helper method to merge all event streams into one
+    private Stream<GpsEvent> mergeAllStreams(Stream<GpsEvent>[] gpsStreams) {
+        if (gpsStreams.length == 0) {
+            throw new IllegalArgumentException("No streams provided.");
+        }
+
+        // Start with the first stream
+        Stream<GpsEvent> mergedStream = gpsStreams[0];
+        // Use a loop to merge each stream into the mergedStream
+        for (int i = 1; i < gpsStreams.length; i++) {
+            mergedStream = mergedStream.orElse(gpsStreams[i]);
+        }
+
+        return mergedStream;
+    }
+
+    // Helper method to create three Basic info: ID, Lat, Lon
+    private List<Cell<String>> createBasicFields(Cell<GpsEvent> gpsEventCell) {
+        // Create Cells for Tracker ID, Latitude, Longitude
+        Cell<String> trackerIdCell = gpsEventCell.map(ev -> ev != null ? ev.name : ""); // Tracker No
+        Cell<String> latCell = gpsEventCell.map(ev -> ev != null ? Double.toString(ev.latitude) : ""); // Latitude
+        Cell<String> lonCell = gpsEventCell.map(ev -> ev != null ? Double.toString(ev.longitude) : ""); // Longitude
+
+        return Arrays.asList(trackerIdCell, latCell, lonCell);
+    }
+
+    private JPanel ControlPanel() {
         // Create three panels for the three parts
-        JPanel inputPanel = createInputPanel();
-        JPanel buttonPanel = createButtonPanel();
-        JPanel labelPanel = createLabelPanel();
+        JPanel inputPanel = UserInputPanel();
+        JPanel buttonPanel = ButtonPanel();
+        JPanel labelPanel = UserInputsLabelPanel();
 
         // First split: between inputPanel and buttonPanel
         JSplitPane splitPane1 = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, inputPanel, buttonPanel);
@@ -107,36 +201,40 @@ public class GuiOutline {
         return mainControlPanel;
     }
 
-    private JPanel createInputPanel() {
+    private JPanel UserInputPanel() {
         JPanel inputPanel = new JPanel(new GridBagLayout());
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(5, 5, 5, 5);
         gbc.fill = GridBagConstraints.HORIZONTAL;
 
-        gbc.gridx = 0; gbc.gridy = 0;
+        gbc.gridx = 0;
+        gbc.gridy = 0;
         inputPanel.add(new JLabel("Min Lat:"), gbc);
         gbc.gridx = 1;
-        inputPanel.add(createCompactTextField(), gbc);
+        inputPanel.add(CompactTextField(), gbc);
 
-        gbc.gridx = 0; gbc.gridy = 1;
+        gbc.gridx = 0;
+        gbc.gridy = 1;
         inputPanel.add(new JLabel("Max Lat:"), gbc);
         gbc.gridx = 1;
-        inputPanel.add(createCompactTextField(), gbc);
+        inputPanel.add(CompactTextField(), gbc);
 
-        gbc.gridx = 0; gbc.gridy = 2;
+        gbc.gridx = 0;
+        gbc.gridy = 2;
         inputPanel.add(new JLabel("Min Lon:"), gbc);
         gbc.gridx = 1;
-        inputPanel.add(createCompactTextField(), gbc);
+        inputPanel.add(CompactTextField(), gbc);
 
-        gbc.gridx = 0; gbc.gridy = 3;
+        gbc.gridx = 0;
+        gbc.gridy = 3;
         inputPanel.add(new JLabel("Max Lon:"), gbc);
         gbc.gridx = 1;
-        inputPanel.add(createCompactTextField(), gbc);
+        inputPanel.add(CompactTextField(), gbc);
 
         return inputPanel;
     }
 
-    private JPanel createButtonPanel() {
+    private JPanel ButtonPanel() {
         JPanel buttonPanel = new JPanel(new GridBagLayout());
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(5, 5, 5, 5);
@@ -146,7 +244,7 @@ public class GuiOutline {
         return buttonPanel;
     }
 
-    private JPanel createLabelPanel() {
+    private JPanel UserInputsLabelPanel() {
         JPanel labelPanel = new JPanel(new GridBagLayout());
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(5, 5, 5, 5);
@@ -156,7 +254,7 @@ public class GuiOutline {
         return labelPanel;
     }
 
-    private JTextField createCompactTextField() {
+    private JTextField CompactTextField() {
         JTextField textField = new JTextField(8);
         textField.setPreferredSize(new Dimension(80, 25)); // Limit the preferred size
         return textField;
