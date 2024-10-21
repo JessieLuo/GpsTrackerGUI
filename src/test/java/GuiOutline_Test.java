@@ -43,8 +43,6 @@ public class GuiOutline_Test {
         trackerIdLabel = null;
         latLabel = null;
         lonLabel = null;
-
-        // Suggestion: Reset state if necessary, but avoid modifying GpsService/GpsEvent
     }
 
 
@@ -97,7 +95,7 @@ public class GuiOutline_Test {
         });
 
         // Wait for another 2 seconds to ensure the new event has reset the clearing mechanism
-        TimeUnit.SECONDS.sleep(3);
+        TimeUnit.SECONDS.sleep(5);
 
         // Ensure that the fields are still not cleared since the new event arrived in time
         SwingUtilities.invokeAndWait(() -> {

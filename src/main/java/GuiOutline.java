@@ -75,6 +75,16 @@ public class GuiOutline {
         return panel;
     }
 
+    // Helper method to create three Basic info: ID, Lat, Lon
+    private List<Cell<String>> createBasicFields(Cell<GpsEvent> gpsEventCell) {
+        // Create Cells for Tracker ID, Latitude, Longitude
+        Cell<String> trackerIdCell = gpsEventCell.map(ev -> ev != null ? ev.name : ""); // Tracker No
+        Cell<String> latCell = gpsEventCell.map(ev -> ev != null ? Double.toString(ev.latitude) : ""); // Latitude
+        Cell<String> lonCell = gpsEventCell.map(ev -> ev != null ? Double.toString(ev.longitude) : ""); // Longitude
+
+        return Arrays.asList(trackerIdCell, latCell, lonCell);
+    }
+
     // Helper method to add labels for a single stream of tracker data
     private void addTrackerLabelsToPanel(Stream<GpsEvent> evStream, JPanel panel) {
         // Hold the current GpsEvent in a Cell
@@ -94,58 +104,68 @@ public class GuiOutline {
     }
 
     // Create a panel to display the current tracker event with clear mechanism after 3 seconds
-    public JPanel CurrentTrackerPanel(Stream<GpsEvent> gpsEventStream) {
+    public JPanel CurrentTrackerPanel(Stream<GpsEvent> gpsEvent) {
         // Create a panel for real-time tracker information
         JPanel panel = new JPanel(new GridLayout(1, 4, 5, 5)); // Single row for real-time data
         panel.setBorder(BorderFactory.createTitledBorder("Current Event"));
 
-        Transaction.runVoid(() -> {
-            // Hold the current GpsEvent in a Cell to track real-time changes
+        Transaction.runVoid(()->{
+            // Hold the latest GpsEvent in a Cell
             CellLoop<GpsEvent> gpsEventCell = new CellLoop<>();
-            gpsEventCell.loop(gpsEventStream.hold(null));
 
-            // Create reactive Cells for each field (Tracker ID, Latitude, Longitude, Timestamp)
+            // Counter to track event numbers
+            int[] eventCount = {0};
+
+            // Introduce delay
+            Stream<GpsEvent> DelayedStream = gpsEvent.map(ev -> {
+                eventCount[0]++; // Increment the event counter
+                if (eventCount[0] % 20 == 0) { // Delay every tenth event
+                    try {
+                        // Introduce delay (e.g., 4 seconds)
+                        Thread.sleep(4000);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
+                return ev;
+            });
+
+            gpsEventCell.loop(DelayedStream.hold(null));
+
+
             List<Cell<String>> cells = createBasicFields(gpsEventCell);
-            Cell<String> timeCell = gpsEventCell.map(ev -> ev != null ? LocalDateTime.now().format(TIME_FORMATTER) : ""); // Timestamp
+            Cell<String> timeCell = gpsEventCell.map(ev -> ev != null ? LocalDateTime.now().format(TIME_FORMATTER) : "");
 
-            // Create SLabels to display the reactive Cells
+            // Create SLabels for displaying GPS event data
             SLabel trackerIdLabel = new SLabel(cells.get(0));
             SLabel latLabel = new SLabel(cells.get(1));
             SLabel lonLabel = new SLabel(cells.get(2));
             SLabel timeLabel = new SLabel(timeCell);
 
-            // Add labels and real-time SLabels to display the current GPS event data
+            // Add SLabels to the panel
             panel.add(trackerIdLabel);
             panel.add(latLabel);
             panel.add(lonLabel);
             panel.add(timeLabel);
 
-            // Set up the 3-second timer to clear the display if no new event arrives
+            // Clearing mechanism
             Timer[] clearTimer = {null}; // Reference to the active timer
 
-            gpsEventStream.listen(ev -> {
+            gpsEvent.listen(ev -> {
                 // Cancel the previous timer if still running
                 if (clearTimer[0] != null) {
                     clearTimer[0].stop();
                 }
 
-                // Make sure fields are updated when a new event arrives
-                trackerIdLabel.setText(ev.name);
-                latLabel.setText(Double.toString(ev.latitude));
-                lonLabel.setText(Double.toString(ev.longitude));
-                timeLabel.setText(LocalDateTime.now().format(TIME_FORMATTER));
-
                 // Create and start a new 3-second timer to clear the display
                 clearTimer[0] = new Timer(3000, e -> {
-                    // Ensure we only clear the fields if no new event has arrived
-                    if (!trackerIdLabel.getText().equals(ev.name)) {
-                        return; // A new event has arrived; don't clear the fields
-                    }
+                    // Clear the labels if no new event arrives
                     timeLabel.setText("");
                     latLabel.setText("");
                     lonLabel.setText("");
                     trackerIdLabel.setText("");
                 });
+
                 clearTimer[0].setRepeats(false); // Ensure the timer runs only once
                 clearTimer[0].start();
             });
@@ -168,16 +188,6 @@ public class GuiOutline {
         }
 
         return mergedStream;
-    }
-
-    // Helper method to create three Basic info: ID, Lat, Lon
-    private List<Cell<String>> createBasicFields(Cell<GpsEvent> gpsEventCell) {
-        // Create Cells for Tracker ID, Latitude, Longitude
-        Cell<String> trackerIdCell = gpsEventCell.map(ev -> ev != null ? ev.name : ""); // Tracker No
-        Cell<String> latCell = gpsEventCell.map(ev -> ev != null ? Double.toString(ev.latitude) : ""); // Latitude
-        Cell<String> lonCell = gpsEventCell.map(ev -> ev != null ? Double.toString(ev.longitude) : ""); // Longitude
-
-        return Arrays.asList(trackerIdCell, latCell, lonCell);
     }
 
     private JPanel ControlPanel() {
