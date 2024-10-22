@@ -11,6 +11,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 
 public class GuiOutline {
     private final JFrame frame = new JFrame("GPS Tracking Application");
@@ -108,19 +109,15 @@ public class GuiOutline {
             // merge all coming in events as last event
             Stream<GpsEvent> lastGpsStream = gpsEvents[0];
             for (int i = 1; i < gpsEvents.length; i++) {
-                System.out.println("Waiting:");
                 lastGpsStream = lastGpsStream.orElse(gpsEvents[i]);
             }
-
-            // Decide if clean content
-            CellLoop<Boolean> isOutdated = new CellLoop<>();
 
             // Get the event occurs time
             TimerSystem<Long> timerSystem = new MillisecondsTimerSystem();
             Cell<Long> timer = timerSystem.time;
             Cell<Long> getEventTime = lastGpsStream
                     .snapshot(timer)
-                    .hold(timerSystem.time.sample());
+                    .hold(System.currentTimeMillis());
             Cell<String> formattedCurrTime = getEventTime.map(timeInMillions -> ", Time " + formatTime(timeInMillions));
 
             // Basic content in current display panel
@@ -130,11 +127,19 @@ public class GuiOutline {
 
             Cell<String> contentWithTime = content.lift(formattedCurrTime, (l, r) -> l + r);
 
-//            Cell<String> conditionContent = contentWithTime.lift(isOutdated, (contT, isOut) -> isOut ? "" : contT);
+            // Decide if clean content
+            Cell<Boolean> isOutdated = timer.lift(getEventTime, (l, r) -> {
+                System.out.println("system time: " + formatTime(l));
+                System.out.println("current event time: " + formatTime(r));
+                System.out.println((l/1000) - (r/1000));
+                System.out.println();
+                return  (l/1000) - (r/1000) > 3;
+            });
+
+            Cell<String> conditionContent = contentWithTime.lift(isOutdated, (contT, isOut) -> isOut ? "" : contT);
 
             // Display text
-//            SLabel currentEventTexts = new SLabel(conditionContent);
-            SLabel currentEventTexts = new SLabel(contentWithTime);
+            SLabel currentEventTexts = new SLabel(conditionContent);
 
             panel.add(currentEventTexts);
         });
