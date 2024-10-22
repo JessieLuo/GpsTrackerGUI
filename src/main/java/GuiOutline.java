@@ -1,12 +1,13 @@
 import nz.sodium.Cell;
-import nz.sodium.CellLoop;
 import nz.sodium.Stream;
 import nz.sodium.Transaction;
 import swidgets.SLabel;
 
 import javax.swing.*;
 import java.awt.*;
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.List;
@@ -15,11 +16,11 @@ public class GuiOutline {
     // Formatter to display time in HH:mm:ss format
     private static final DateTimeFormatter TIME_FORMATTER = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss");
     private final JFrame frame = new JFrame("GPS Tracking Application");
-    private final Stream<GpsEvent>[] gpsStreams;
+    private final Stream<GpsEvent>[] gpsEvents;
 
-    public GuiOutline(Stream<GpsEvent>[] gpsStreams) {
+    public GuiOutline(Stream<GpsEvent>[] gpsEvents) {
         // Initialize the GUI components
-        this.gpsStreams = gpsStreams;
+        this.gpsEvents = gpsEvents;
         initializeComponents();
     }
 
@@ -28,14 +29,12 @@ public class GuiOutline {
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame.setSize(1200, 800); // Proper window size to accommodate components
 
-        // 1. All Tracker Display Panel and Real-time Info
-        JPanel allTrackerDisplayPanel = TrackerDisplayPanel("All Tracker Display", gpsStreams);
-        // Merge all streams into one stream for the current event panel
-        Stream<GpsEvent> currentEventStream = mergeAllStreams(gpsStreams);
-        JPanel currentTrackerPanel = CurrentTrackerPanel(currentEventStream);
+        // All Tracker Display Panel and Real-time Info
+        JPanel allTrackerDisplayPanel = TrackerDisplayPanel("All Tracker Display", gpsEvents);
+        JPanel currentTrackerPanel = CurrentTrackerPanel(gpsEvents);
 
-        // 2. Filtered Tracker Display Panel and Control Panel
-        JPanel filteredTrackerDisplayPanel = TrackerDisplayPanel("Filtered Tracker Display", gpsStreams);
+        // Filtered Tracker Display Panel and Control Panel
+        JPanel filteredTrackerDisplayPanel = TrackerDisplayPanel("Filtered Tracker Display", gpsEvents);
         JPanel controlPanel = ControlPanel();
 
         // Combine the left display panel with its corresponding info panel using JSplitPane
@@ -56,9 +55,9 @@ public class GuiOutline {
     }
 
     // Create a panel to display all tracker events
-    public JPanel TrackerDisplayPanel(String title, Stream<GpsEvent>[] eventStreams) {
+    public JPanel TrackerDisplayPanel(String title, Stream<GpsEvent>[] gpsEvents) {
         int columnCount = 3; // Columns: Tracker ID, Lat, Lon
-        int rowCount = eventStreams.length;
+        int rowCount = gpsEvents.length;
         JPanel panel = new JPanel(new GridLayout(rowCount + 1, columnCount, 5, 5)); // +1 for the header row
         panel.setBorder(BorderFactory.createTitledBorder(title));
 
@@ -68,7 +67,7 @@ public class GuiOutline {
         panel.add(new JLabel("Longitude"));
 
         // Data rows for each stream
-        for (Stream<GpsEvent> evStream : eventStreams) {
+        for (Stream<GpsEvent> evStream : gpsEvents) {
             addTrackerLabelsToPanel(evStream, panel);
         }
 
@@ -103,91 +102,56 @@ public class GuiOutline {
         panel.add(lonLabel);
     }
 
-    // Create a panel to display the current tracker event with clear mechanism after 3 seconds
-    public JPanel CurrentTrackerPanel(Stream<GpsEvent> gpsEvent) {
-        // Create a panel for real-time tracker information
-        JPanel panel = new JPanel(new GridLayout(1, 4, 5, 5)); // Single row for real-time data
+    public JPanel CurrentTrackerPanel(Stream<GpsEvent>[] gpsEvents) {
+        JPanel panel = new JPanel(new GridLayout(1, 5, 5, 5)); // Single row for real-time data
         panel.setBorder(BorderFactory.createTitledBorder("Current Event"));
 
-        Transaction.runVoid(()->{
-            // Hold the latest GpsEvent in a Cell
-            CellLoop<GpsEvent> gpsEventCell = new CellLoop<>();
+        Transaction.runVoid(() -> {
+            // merge all coming in events as last event
+            Stream<GpsEvent> lastGpsStream = gpsEvents[0];
+            for (int i = 1; i < gpsEvents.length; i++) {
+                lastGpsStream = lastGpsStream.orElse(gpsEvents[i]);
+            }
 
-            // Counter to track event numbers
-            int[] eventCount = {0};
+            Cell<Long> eventTime = lastGpsStream
+                    .snapshot(new Cell<>(System.currentTimeMillis()))
+                    .hold(System.currentTimeMillis());
 
-            // Introduce delay
-            Stream<GpsEvent> DelayedStream = gpsEvent.map(ev -> {
-                eventCount[0]++; // Increment the event counter
-                if (eventCount[0] % 20 == 0) { // Delay every tenth event
-                    try {
-                        // Introduce delay (e.g., 4 seconds)
-                        Thread.sleep(4000);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                }
-                return ev;
-            });
+            // Need 4 cell for each element: id, lat, lon, time
+            Cell<String> trackerID = lastGpsStream.map(ev->ev.name).hold("");
+            Cell<String> latitude = lastGpsStream.map(ev->String.valueOf(ev.latitude)).hold("");
+            Cell<String> longitude = lastGpsStream.map(ev->String.valueOf(ev.longitude)).hold("");
+            Cell<Long> currentTime = lastGpsStream
+                    .map(time -> System.currentTimeMillis()) // Store system time as long (milliseconds)
+                    .hold(System.currentTimeMillis());
+            Cell<String> currentTimeStr = currentTime
+                    .map(timeInMillis -> {
+                        LocalTime currTim = Instant.ofEpochMilli(timeInMillis)
+                                .atZone(ZoneId.systemDefault())
+                                .toLocalTime();
+                        return currTim.format(TIME_FORMATTER);
+                    });
 
-            gpsEventCell.loop(DelayedStream.hold(null));
+            Cell<Boolean> isOutdated = eventTime.lift(currentTime, (a, b)->(a-b)>3000);
 
+            // Conditionally display or clear GPS data based on whether the event is outdated
+            Cell<String> displayTrackerID = isOutdated.lift(trackerID, (outdated, id) -> outdated ? "" : id);
+            Cell<String> displayLatitude = isOutdated.lift(latitude, (outdated, lat) -> outdated ? "" : lat);
+            Cell<String> displayLongitude = isOutdated.lift(longitude, (outdated, lon) -> outdated ? "" : lon);
+            Cell<String> displayCurrentTime = isOutdated.lift(currentTimeStr, (outdated, timeStr) -> outdated ? "" : timeStr);
 
-            List<Cell<String>> cells = createBasicFields(gpsEventCell);
-            Cell<String> timeCell = gpsEventCell.map(ev -> ev != null ? LocalDateTime.now().format(TIME_FORMATTER) : "");
+            SLabel trackerIDLabel = new SLabel(displayTrackerID);
+            SLabel latitudeLabel = new SLabel(displayLatitude);
+            SLabel longitudeLabel = new SLabel(displayLongitude);
+            SLabel currentTimeLabel = new SLabel(displayCurrentTime);
 
-            // Create SLabels for displaying GPS event data
-            SLabel trackerIdLabel = new SLabel(cells.get(0));
-            SLabel latLabel = new SLabel(cells.get(1));
-            SLabel lonLabel = new SLabel(cells.get(2));
-            SLabel timeLabel = new SLabel(timeCell);
-
-            // Add SLabels to the panel
-            panel.add(trackerIdLabel);
-            panel.add(latLabel);
-            panel.add(lonLabel);
-            panel.add(timeLabel);
-
-            // Clearing mechanism
-            Timer[] clearTimer = {null}; // Reference to the active timer
-
-            gpsEvent.listen(ev -> {
-                // Cancel the previous timer if still running
-                if (clearTimer[0] != null) {
-                    clearTimer[0].stop();
-                }
-
-                // Create and start a new 3-second timer to clear the display
-                clearTimer[0] = new Timer(3000, e -> {
-                    // Clear the labels if no new event arrives
-                    timeLabel.setText("");
-                    latLabel.setText("");
-                    lonLabel.setText("");
-                    trackerIdLabel.setText("");
-                });
-
-                clearTimer[0].setRepeats(false); // Ensure the timer runs only once
-                clearTimer[0].start();
-            });
+            panel.add(trackerIDLabel);
+            panel.add(latitudeLabel);
+            panel.add(longitudeLabel);
+            panel.add(currentTimeLabel);
         });
 
         return panel;
-    }
-
-    // Helper method to merge all event streams into one
-    private Stream<GpsEvent> mergeAllStreams(Stream<GpsEvent>[] gpsStreams) {
-        if (gpsStreams.length == 0) {
-            throw new IllegalArgumentException("No streams provided.");
-        }
-
-        // Start with the first stream
-        Stream<GpsEvent> mergedStream = gpsStreams[0];
-        // Use a loop to merge each stream into the mergedStream
-        for (int i = 1; i < gpsStreams.length; i++) {
-            mergedStream = mergedStream.orElse(gpsStreams[i]);
-        }
-
-        return mergedStream;
     }
 
     private JPanel ControlPanel() {
