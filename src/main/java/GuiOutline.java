@@ -113,42 +113,26 @@ public class GuiOutline {
                 lastGpsStream = lastGpsStream.orElse(gpsEvents[i]);
             }
 
-            Cell<Long> eventTime = lastGpsStream
+            //
+            Cell<Long> getEventTime = lastGpsStream
                     .snapshot(new Cell<>(System.currentTimeMillis()))
                     .hold(System.currentTimeMillis());
 
-            // Need 4 cell for each element: id, lat, lon, time
-            Cell<String> trackerID = lastGpsStream.map(ev->ev.name).hold("");
-            Cell<String> latitude = lastGpsStream.map(ev->String.valueOf(ev.latitude)).hold("");
-            Cell<String> longitude = lastGpsStream.map(ev->String.valueOf(ev.longitude)).hold("");
-            Cell<Long> currentTime = lastGpsStream
-                    .map(time -> System.currentTimeMillis()) // Store system time as long (milliseconds)
-                    .hold(System.currentTimeMillis());
-            Cell<String> currentTimeStr = currentTime
-                    .map(timeInMillis -> {
+            //
+            Cell<String> content = lastGpsStream
+                    .map(ev -> "ID:" + ev.name + ", Latitude " + ev.latitude + ", Longitude " + ev.longitude)
+                    .hold("");
+            Cell<String> formattedCurrTime = getEventTime.map(timeInMillis -> {
                         LocalTime currTim = Instant.ofEpochMilli(timeInMillis)
                                 .atZone(ZoneId.systemDefault())
                                 .toLocalTime();
-                        return currTim.format(TIME_FORMATTER);
+                        return ", Time: " + currTim.format(TIME_FORMATTER);
                     });
+            Cell<String> contentWithTime = content.lift(formattedCurrTime, (l, r) -> l + r);
 
-            Cell<Boolean> isOutdated = eventTime.lift(currentTime, (a, b)->(a-b)>3000);
+            SLabel currentEventTexts = new SLabel(contentWithTime);
 
-            // Conditionally display or clear GPS data based on whether the event is outdated
-            Cell<String> displayTrackerID = isOutdated.lift(trackerID, (outdated, id) -> outdated ? "" : id);
-            Cell<String> displayLatitude = isOutdated.lift(latitude, (outdated, lat) -> outdated ? "" : lat);
-            Cell<String> displayLongitude = isOutdated.lift(longitude, (outdated, lon) -> outdated ? "" : lon);
-            Cell<String> displayCurrentTime = isOutdated.lift(currentTimeStr, (outdated, timeStr) -> outdated ? "" : timeStr);
-
-            SLabel trackerIDLabel = new SLabel(displayTrackerID);
-            SLabel latitudeLabel = new SLabel(displayLatitude);
-            SLabel longitudeLabel = new SLabel(displayLongitude);
-            SLabel currentTimeLabel = new SLabel(displayCurrentTime);
-
-            panel.add(trackerIDLabel);
-            panel.add(latitudeLabel);
-            panel.add(longitudeLabel);
-            panel.add(currentTimeLabel);
+            panel.add(currentEventTexts);
         });
 
         return panel;
