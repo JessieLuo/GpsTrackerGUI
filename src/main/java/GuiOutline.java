@@ -1,20 +1,18 @@
-import nz.sodium.Cell;
-import nz.sodium.Stream;
-import nz.sodium.Transaction;
+import nz.sodium.*;
+import nz.sodium.time.MillisecondsTimerSystem;
+import nz.sodium.time.TimerSystem;
 import swidgets.SLabel;
 
 import javax.swing.*;
 import java.awt.*;
 import java.time.Instant;
-import java.time.LocalTime;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.List;
 
 public class GuiOutline {
-    // Formatter to display time in HH:mm:ss format
-    private static final DateTimeFormatter TIME_FORMATTER = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss");
     private final JFrame frame = new JFrame("GPS Tracking Application");
     private final Stream<GpsEvent>[] gpsEvents;
 
@@ -103,39 +101,53 @@ public class GuiOutline {
     }
 
     public JPanel CurrentTrackerPanel(Stream<GpsEvent>[] gpsEvents) {
-        JPanel panel = new JPanel(new GridLayout(1, 5, 5, 5)); // Single row for real-time data
+        JPanel panel = new JPanel(new GridLayout(1, 1, 5, 5)); // Single row for real-time data
         panel.setBorder(BorderFactory.createTitledBorder("Current Event"));
 
         Transaction.runVoid(() -> {
             // merge all coming in events as last event
             Stream<GpsEvent> lastGpsStream = gpsEvents[0];
             for (int i = 1; i < gpsEvents.length; i++) {
+                System.out.println("Waiting:");
                 lastGpsStream = lastGpsStream.orElse(gpsEvents[i]);
             }
 
-            //
-            Cell<Long> getEventTime = lastGpsStream
-                    .snapshot(new Cell<>(System.currentTimeMillis()))
-                    .hold(System.currentTimeMillis());
+            // Decide if clean content
+            CellLoop<Boolean> isOutdated = new CellLoop<>();
 
-            //
+            // Get the event occurs time
+            TimerSystem<Long> timerSystem = new MillisecondsTimerSystem();
+            Cell<Long> timer = timerSystem.time;
+            Cell<Long> getEventTime = lastGpsStream
+                    .snapshot(timer)
+                    .hold(timerSystem.time.sample());
+            Cell<String> formattedCurrTime = getEventTime.map(timeInMillions -> ", Time " + formatTime(timeInMillions));
+
+            // Basic content in current display panel
             Cell<String> content = lastGpsStream
-                    .map(ev -> "ID:" + ev.name + ", Latitude " + ev.latitude + ", Longitude " + ev.longitude)
+                    .map(ev -> "ID: " + ev.name + ", Latitude " + ev.latitude + ", Longitude " + ev.longitude)
                     .hold("");
-            Cell<String> formattedCurrTime = getEventTime.map(timeInMillis -> {
-                        LocalTime currTim = Instant.ofEpochMilli(timeInMillis)
-                                .atZone(ZoneId.systemDefault())
-                                .toLocalTime();
-                        return ", Time: " + currTim.format(TIME_FORMATTER);
-                    });
+
             Cell<String> contentWithTime = content.lift(formattedCurrTime, (l, r) -> l + r);
 
+//            Cell<String> conditionContent = contentWithTime.lift(isOutdated, (contT, isOut) -> isOut ? "" : contT);
+
+            // Display text
+//            SLabel currentEventTexts = new SLabel(conditionContent);
             SLabel currentEventTexts = new SLabel(contentWithTime);
 
             panel.add(currentEventTexts);
         });
 
         return panel;
+    }
+
+    // Format time as H:M:S
+    private String formatTime(long time) {
+        DateTimeFormatter TIME_FORMATTER = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss");
+        Instant instant = Instant.ofEpochMilli(time);
+        LocalDateTime localDateTime = LocalDateTime.ofInstant(instant, ZoneId.systemDefault());
+        return localDateTime.format(TIME_FORMATTER);
     }
 
     private JPanel ControlPanel() {
