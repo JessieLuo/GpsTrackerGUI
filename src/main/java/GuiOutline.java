@@ -4,7 +4,9 @@ import nz.sodium.Stream;
 import nz.sodium.Transaction;
 import nz.sodium.time.MillisecondsTimerSystem;
 import nz.sodium.time.TimerSystem;
+import swidgets.SButton;
 import swidgets.SLabel;
+import swidgets.STextField;
 
 import javax.swing.*;
 import java.awt.*;
@@ -39,10 +41,6 @@ public class GuiOutline {
 
         // Right-side GUI: Single Display(2) --
         JPanel filteredTrackerDisplayPanel = FilteredTrackerDisplayPanel("Filtered Tracker Display", gpsEvents);
-        JPanel controlPanel = ControlPanel();
-        // Combine Display(2)
-        JSplitPane filteredTrackerSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, filteredTrackerDisplayPanel, controlPanel);
-        filteredTrackerSplitPane.setResizeWeight(0.8);
 
         // Place the main panels side by side
         JPanel mainPanel = new JPanel(new GridBagLayout());
@@ -51,17 +49,17 @@ public class GuiOutline {
         // Add the left component
         gbc.gridx = 0;
         gbc.gridy = 0;
-        gbc.weightx = 0.6;
+        gbc.weightx = 0.4;
         gbc.weighty = 1.0;
         gbc.fill = GridBagConstraints.BOTH;
         mainPanel.add(allTrackerSplitPane, gbc);
 
         // Add the right component
         gbc.gridx = 1;
-        gbc.weightx = 0.4;
+        gbc.weightx = 0.6;
         gbc.weighty = 1.0;
         gbc.fill = GridBagConstraints.BOTH;
-        mainPanel.add(filteredTrackerSplitPane, gbc);
+        mainPanel.add(filteredTrackerDisplayPanel, gbc);
 
         frame.setLayout(new BorderLayout());
         frame.add(mainPanel, BorderLayout.CENTER);
@@ -106,14 +104,17 @@ public class GuiOutline {
 
             // merge all coming in events as last event
             Stream<GpsEvent> lastGpsStream = gpsEvents[0];
-            for (int i = 1; i < 2; i++) {
+            for (int i = 1; i < gpsEvents.length; i++) {
                 lastGpsStream = lastGpsStream.orElse(gpsEvents[i]);
             }
 
             // Get the event occurs time
             Cell<String> formattedCurrTime = lastGpsStream
-                    .snapshot(timer).hold(System.currentTimeMillis())
-                    .map(timeInMillions -> ", Time: " + formatTime(timeInMillions));
+                    .snapshot(timer).hold(0L)
+                    .map(timeInMillions -> {
+                        System.out.println("Current event occurs time " + formatTime(timeInMillions));
+                        return ", Time: " + formatTime(timeInMillions);
+                    });
 
             // Basic content in current display panel
             Cell<String> content = lastGpsStream.map(ev -> ev.name + ", Latitude:" + ev.latitude + ", Longitude: " + ev.longitude).hold("").lift(formattedCurrTime, (l, r) -> l + r);
@@ -121,14 +122,17 @@ public class GuiOutline {
             // clean content when it outdated
             Cell<String> clean = new Cell<>("");
 
-            // Stream to capture changes in trackerID, latitude, and longitude
+            // capture changes
             Stream<GpsData> sCurrentGpsData = lastGpsStream.map(ev -> new GpsData(ev.name, String.valueOf(ev.latitude), String.valueOf(ev.longitude), System.currentTimeMillis()));
 
-            // CellLoop to track the previous state
+            // track the previous state
             CellLoop<GpsData> previousGpsData = new CellLoop<>();
 
-            // Stream to detect changes in the GPS data
-            Stream<GpsData> sChanged = sCurrentGpsData.snapshot(previousGpsData, (curr, prev) -> !curr.equals(prev) ? curr : null);
+            // detect changes in the GPS data
+            Stream<GpsData> sChanged = sCurrentGpsData.snapshot(previousGpsData, (curr, prev) -> {
+                System.out.println("Occurred Event Time: " + formatTime(prev.time));
+                return !curr.equals(prev) ? curr : null;
+            });
 
             // Only update when data change
             Stream<GpsData> sUpdate = sChanged.filter(Objects::nonNull);
@@ -136,10 +140,10 @@ public class GuiOutline {
             // update the previous data when it changed
             previousGpsData.loop(sUpdate.hold(new GpsData("", "", "", 0L)));
 
-            // Stream to check if content has remained unchanged for 3 seconds
+            // check if content has remained unchanged for 3 seconds
             Stream<Long> sLastChangeTime = sUpdate.snapshot(timer, (changed, currentTime) -> currentTime);
 
-            // Cell to hold the last change time
+            // hold the last change time
             Cell<Long> lastChangeTimeValue = sLastChangeTime.hold(0L);
 
             // Check if 3 seconds have passed since the last content change
@@ -165,18 +169,39 @@ public class GuiOutline {
     }
 
     public JPanel FilteredTrackerDisplayPanel(String title, Stream<GpsEvent>[] gpsEvents) {
-        JPanel panel = new JPanel(new GridLayout(rowCount + 1, 5, 5, 5)); // +1 for the header row
+        /* Set GUI **/
+        JPanel panel = new JPanel(new BorderLayout());
+
+        // Create textPanel with labels
+        JPanel textPanel = new JPanel(new GridLayout(gpsEvents.length + 1, 1, 5, 5));
+        textPanel.add(new JLabel("ID"));
+        textPanel.add(new JLabel("Latitude"));
+        textPanel.add(new JLabel("Longitude"));
+        textPanel.add(new JLabel("Time"));
+        textPanel.add(new JLabel("Distance"));
+
+        // Create setPanel with GridBagLayout and button
+        JPanel setPanel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.anchor = GridBagConstraints.CENTER;
+        SButton setButton = new SButton("Set");
+        setPanel.add(setButton, gbc);
+
+        // Create JSplitPane with textPanel and setPanel
+        JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, textPanel, setPanel);
+        splitPane.setResizeWeight(0.8);
+
+        // Add the split pane to the main panel
+        panel.add(splitPane, BorderLayout.CENTER);
         panel.setBorder(BorderFactory.createTitledBorder(title));
 
-        panel.add(new JLabel("ID"));
-        panel.add(new JLabel("Latitude"));
-        panel.add(new JLabel("Longitude"));
-        panel.add(new JLabel("Time"));
-        panel.add(new JLabel("Distance"));
-
+        /* Core Logic Begin **/
         TimerSystem<Long> timerSystem = new MillisecondsTimerSystem();
         Cell<Long> timer = timerSystem.time;
 
+        // TODO: use filtered gpsEvents in future
+        Stream<GpsEvent>[] filteredGpsEvents;
         for (Stream<GpsEvent> evStream : gpsEvents) {
             Cell<String> trackerId = evStream.map(ev -> ev.name).hold("");
             Cell<String> latitude = evStream.map(ev -> String.valueOf(ev.latitude)).hold("");
@@ -190,96 +215,17 @@ public class GuiOutline {
             SLabel lat = new SLabel(latitude);
             SLabel lon = new SLabel(longitude);
             SLabel time = new SLabel(timeStamp);
-            SLabel distance = new SLabel(altitude);
+            // need change
+            SLabel dist = new SLabel(altitude);
 
-            panel.add(id);
-            panel.add(lat);
-            panel.add(lon);
-            panel.add(time);
-            panel.add(distance);
+            textPanel.add(id);
+            textPanel.add(lat);
+            textPanel.add(lon);
+            textPanel.add(time);
+            textPanel.add(dist);
         }
 
         return panel;
-    }
-
-    private JPanel ControlPanel() {
-        // Create three panels for the three parts
-        JPanel inputPanel = UserInputPanel();
-        JPanel buttonPanel = ButtonPanel();
-        JPanel labelPanel = UserInputsLabelPanel();
-
-        // First split: between inputPanel and buttonPanel
-        JSplitPane splitPane1 = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, inputPanel, buttonPanel);
-        splitPane1.setResizeWeight(0.6); // More space for input fields
-
-        // Second split: between buttonPanel and labelPanel
-        JSplitPane splitPane2 = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, splitPane1, labelPanel);
-        splitPane2.setResizeWeight(0.8); // More space for button area
-
-        // Wrap in a main control panel
-        JPanel mainControlPanel = new JPanel(new BorderLayout());
-        mainControlPanel.add(splitPane2, BorderLayout.CENTER);
-        mainControlPanel.setBorder(BorderFactory.createTitledBorder("Control Panel"));
-        return mainControlPanel;
-    }
-
-    private JPanel UserInputPanel() {
-        JPanel inputPanel = new JPanel(new GridBagLayout());
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(5, 5, 5, 5);
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-
-        gbc.gridx = 0;
-        gbc.gridy = 0;
-        inputPanel.add(new JLabel("Min Lat:"), gbc);
-        gbc.gridx = 1;
-        inputPanel.add(CompactTextField(), gbc);
-
-        gbc.gridx = 0;
-        gbc.gridy = 1;
-        inputPanel.add(new JLabel("Max Lat:"), gbc);
-        gbc.gridx = 1;
-        inputPanel.add(CompactTextField(), gbc);
-
-        gbc.gridx = 0;
-        gbc.gridy = 2;
-        inputPanel.add(new JLabel("Min Lon:"), gbc);
-        gbc.gridx = 1;
-        inputPanel.add(CompactTextField(), gbc);
-
-        gbc.gridx = 0;
-        gbc.gridy = 3;
-        inputPanel.add(new JLabel("Max Lon:"), gbc);
-        gbc.gridx = 1;
-        inputPanel.add(CompactTextField(), gbc);
-
-        return inputPanel;
-    }
-
-    private JPanel ButtonPanel() {
-        JPanel buttonPanel = new JPanel(new GridBagLayout());
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(5, 5, 5, 5);
-        gbc.anchor = GridBagConstraints.CENTER;
-        JButton setRestrictionButton = new JButton("Set");
-        buttonPanel.add(setRestrictionButton, gbc);
-        return buttonPanel;
-    }
-
-    private JPanel UserInputsLabelPanel() {
-        JPanel labelPanel = new JPanel(new GridBagLayout());
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(5, 5, 5, 5);
-        gbc.anchor = GridBagConstraints.CENTER;
-        JLabel restrictionValueLabel = new JLabel("Current Restriction: None");
-        labelPanel.add(restrictionValueLabel, gbc);
-        return labelPanel;
-    }
-
-    private JTextField CompactTextField() {
-        JTextField textField = new JTextField(8);
-        textField.setPreferredSize(new Dimension(80, 25)); // Limit the preferred size
-        return textField;
     }
 
     public void show() {
