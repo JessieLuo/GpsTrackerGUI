@@ -1,4 +1,7 @@
-import nz.sodium.*;
+import nz.sodium.Cell;
+import nz.sodium.CellLoop;
+import nz.sodium.Stream;
+import nz.sodium.Transaction;
 import nz.sodium.time.MillisecondsTimerSystem;
 import nz.sodium.time.TimerSystem;
 import swidgets.SLabel;
@@ -11,7 +14,6 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Optional;
 
 public class GuiOutline {
     private final JFrame frame = new JFrame("GPS Tracking Application");
@@ -102,10 +104,14 @@ public class GuiOutline {
     }
 
     public JPanel CurrentTrackerPanel(Stream<GpsEvent>[] gpsEvents) {
-        JPanel panel = new JPanel(new GridLayout(1, 1, 5, 5)); // Single row for real-time data
+        JPanel panel = new JPanel(new GridLayout(1, 1, 5, 5));
         panel.setBorder(BorderFactory.createTitledBorder("Current Event"));
 
         Transaction.runVoid(() -> {
+            // Capture system time
+            TimerSystem<Long> timerSystem = new MillisecondsTimerSystem();
+            Cell<Long> timer = timerSystem.time;
+
             // merge all coming in events as last event
             Stream<GpsEvent> lastGpsStream = gpsEvents[0];
             for (int i = 1; i < gpsEvents.length; i++) {
@@ -113,33 +119,48 @@ public class GuiOutline {
             }
 
             // Get the event occurs time
-            TimerSystem<Long> timerSystem = new MillisecondsTimerSystem();
-            Cell<Long> timer = timerSystem.time;
             Cell<Long> getEventTime = lastGpsStream
                     .snapshot(timer)
                     .hold(System.currentTimeMillis());
-            Cell<String> formattedCurrTime = getEventTime.map(timeInMillions -> ", Time " + formatTime(timeInMillions));
+            Cell<String> formattedCurrTime = getEventTime.map(timeInMillions -> ", Time: " + formatTime(timeInMillions));
 
             // Basic content in current display panel
-            Cell<String> content = lastGpsStream
-                    .map(ev -> "ID: " + ev.name + ", Latitude " + ev.latitude + ", Longitude " + ev.longitude)
-                    .hold("");
+            Cell<String> content = lastGpsStream.map(ev -> ev.name + ", Latitude:" + ev.latitude + ", Longitude: " + ev.longitude).hold("").lift(formattedCurrTime, (l, r) -> l + r);
 
-            Cell<String> contentWithTime = content.lift(formattedCurrTime, (l, r) -> l + r);
+            // clean content when it outdated
+            Cell<String> clean = new Cell<>("");
 
-            // Decide if clean content
-            Cell<Boolean> isOutdated = timer.lift(getEventTime, (l, r) -> {
-                System.out.println("system time: " + formatTime(l));
-                System.out.println("current event time: " + formatTime(r));
-                System.out.println((l/1000) - (r/1000));
-                System.out.println();
-                return  (l/1000) - (r/1000) > 3;
+            // Stream to capture changes in trackerID, latitude, and longitude
+            Stream<GpsData> gpsDataStream = lastGpsStream.map(ev -> new GpsData(ev.name, String.valueOf(ev.latitude), String.valueOf(ev.longitude), System.currentTimeMillis()));
+
+            // CellLoop to track the previous state
+            CellLoop<GpsData> previousGpsData = new CellLoop<>();
+
+            // Stream to detect changes in the GPS data
+            Stream<Boolean> sChanged = gpsDataStream.snapshot(previousGpsData, (current, previous) -> {
+                return !current.equals(previous);  // Compare the current and previous values
+            }).filter(changed -> changed);  // Only propagate if the content has changed
+
+            // Loop the previous GpsData to store the latest state
+            previousGpsData.loop(gpsDataStream.hold(new GpsData("", "", "", 0L)));
+
+            // Stream to check if content has remained unchanged for 3 seconds
+            Stream<Long> sLastChangeTime = sChanged.snapshot(timer, (changed, currentTime) -> currentTime);
+
+            // Cell to hold the last change time
+            Cell<Long> lastChangeTimeValue = sLastChangeTime.hold(0L);
+
+            // Check if 3 seconds have passed since the last content change
+            Cell<Boolean> isOutdated = timer.lift(lastChangeTimeValue, (currentTime, lastChangeTime) -> {
+                System.out.println("Content unchanged time: " + (currentTime-lastChangeTime));
+                return (currentTime - lastChangeTime) >= 3000; // Return true if 3 seconds have passed
             });
 
-            Cell<String> conditionContent = contentWithTime.lift(isOutdated, (contT, isOut) -> isOut ? "" : contT);
+            // Display either the clean content or actual content based on whether it has been unchanged for 3 seconds
+            Cell<String> displayContent = isOutdated.lift(content, (unchanged, cont) -> unchanged ? clean.sample() : cont);
 
             // Display text
-            SLabel currentEventTexts = new SLabel(conditionContent);
+            SLabel currentEventTexts = new SLabel(displayContent);
 
             panel.add(currentEventTexts);
         });
@@ -239,4 +260,27 @@ public class GuiOutline {
         frame.setVisible(true);
     }
 
+}
+
+/**
+ * Helper class
+ */
+class GpsData {
+    public final String trackerID;
+    public final String latitude;
+    public final String longitude;
+    public final Long time;
+
+    public GpsData(String trackerID, String latitude, String longitude, Long time) {
+        this.trackerID = trackerID;
+        this.latitude = latitude;
+        this.longitude = longitude;
+        this.time = time;
+    }
+
+    public boolean equals(GpsData other) {
+        return this.trackerID.equals(other.trackerID) &&
+                this.latitude.equals(other.latitude) &&
+                this.longitude.equals(other.longitude);
+    }
 }
