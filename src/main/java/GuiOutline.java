@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.Objects;
 
 public class GuiOutline {
     private final JFrame frame = new JFrame("GPS Tracking Application");
@@ -105,7 +106,7 @@ public class GuiOutline {
 
             // merge all coming in events as last event
             Stream<GpsEvent> lastGpsStream = gpsEvents[0];
-            for (int i = 1; i < gpsEvents.length; i++) {
+            for (int i = 1; i < 2; i++) {
                 lastGpsStream = lastGpsStream.orElse(gpsEvents[i]);
             }
 
@@ -121,34 +122,32 @@ public class GuiOutline {
             Cell<String> clean = new Cell<>("");
 
             // Stream to capture changes in trackerID, latitude, and longitude
-            Stream<GpsData> gpsDataStream = lastGpsStream.map(ev -> new GpsData(ev.name, String.valueOf(ev.latitude), String.valueOf(ev.longitude), System.currentTimeMillis()));
+            Stream<GpsData> sCurrentGpsData = lastGpsStream.map(ev -> new GpsData(ev.name, String.valueOf(ev.latitude), String.valueOf(ev.longitude), System.currentTimeMillis()));
 
             // CellLoop to track the previous state
             CellLoop<GpsData> previousGpsData = new CellLoop<>();
 
             // Stream to detect changes in the GPS data
-            Stream<Boolean> sChanged = gpsDataStream.snapshot(previousGpsData, (current, previous) -> {
-                return !current.equals(previous);  // Compare the current and previous values
-            }).filter(changed -> changed);  // Only propagate if the content has changed
+            Stream<GpsData> sChanged = sCurrentGpsData.snapshot(previousGpsData, (curr, prev) -> !curr.equals(prev) ? curr : null);
 
-            // Loop the previous GpsData to store the latest state
-            previousGpsData.loop(gpsDataStream.hold(new GpsData("", "", "", 0L)));
+            // Only update when data change
+            Stream<GpsData> sUpdate = sChanged.filter(Objects::nonNull);
+
+            // update the previous data when it changed
+            previousGpsData.loop(sUpdate.hold(new GpsData("", "", "", 0L)));
 
             // Stream to check if content has remained unchanged for 3 seconds
-            Stream<Long> sLastChangeTime = sChanged.snapshot(timer, (changed, currentTime) -> currentTime);
+            Stream<Long> sLastChangeTime = sUpdate.snapshot(timer, (changed, currentTime) -> currentTime);
 
             // Cell to hold the last change time
             Cell<Long> lastChangeTimeValue = sLastChangeTime.hold(0L);
 
             // Check if 3 seconds have passed since the last content change
-            Cell<Boolean> isOutdated = timer.lift(lastChangeTimeValue, (currentTime, lastChangeTime) -> {
-                return (currentTime - lastChangeTime) >= 3000; // Return true if 3 seconds have passed
-            });
+            Cell<Boolean> isOutdated = timer.lift(lastChangeTimeValue, (currentTime, lastChangeTime) -> (currentTime - lastChangeTime) >= 3000);
 
-            // Display either the clean content or actual content based on whether it has been unchanged for 3 seconds
+            // Display real content; otherwise, display clean
             Cell<String> displayContent = isOutdated.lift(content, (unchanged, cont) -> unchanged ? clean.sample() : cont);
 
-            // Display text
             SLabel currentEventTexts = new SLabel(displayContent);
 
             panel.add(currentEventTexts);
