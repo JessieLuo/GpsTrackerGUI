@@ -152,7 +152,6 @@ public class GuiOutline {
 
             // Check if 3 seconds have passed since the last content change
             Cell<Boolean> isOutdated = timer.lift(lastChangeTimeValue, (currentTime, lastChangeTime) -> {
-                System.out.println("Content unchanged time: " + (currentTime-lastChangeTime));
                 return (currentTime - lastChangeTime) >= 3000; // Return true if 3 seconds have passed
             });
 
