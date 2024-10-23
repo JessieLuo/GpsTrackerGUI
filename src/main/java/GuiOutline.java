@@ -3,6 +3,7 @@ import nz.sodium.time.MillisecondsTimerSystem;
 import nz.sodium.time.TimerSystem;
 import swidgets.SButton;
 import swidgets.SLabel;
+import swidgets.STextField;
 
 import javax.swing.*;
 import java.awt.*;
@@ -11,7 +12,6 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Objects;
-import java.util.TimerTask;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -127,11 +127,8 @@ public class GuiOutline {
             prevData.loop(sSetNew.filter(Objects::nonNull).hold(new GpsData("", "", "", 0L)));
 
             Cell<String> clean = new Cell<>("");
-            Cell<String> content = clean.lift(sysTimeCell, prevData, (empty, sysTime, cont) -> {
-                long evTime = cont.time;
-                System.out.println("The data has stay: " + (sysTime - evTime));
-                return (sysTime - evTime > 3000) ? empty : cont;
-            }).map(Object::toString);
+            Cell<String> content = clean.lift(sysTimeCell, prevData, (empty, sysTime, cont)
+                    -> (sysTime - cont.time > 3000) ? empty : cont).map(Object::toString);
 
             SLabel currentEventTexts = new SLabel(content);
 
@@ -153,7 +150,7 @@ public class GuiOutline {
         /* Set GUI **/
         JPanel panel = new JPanel(new BorderLayout());
 
-        // Create textPanel with labels
+        // Create textPanel
         JPanel textPanel = new JPanel(new GridLayout(gpsEvents.length + 1, 1, 5, 5));
         textPanel.add(new JLabel("ID"));
         textPanel.add(new JLabel("Latitude"));
@@ -161,23 +158,74 @@ public class GuiOutline {
         textPanel.add(new JLabel("Time"));
         textPanel.add(new JLabel("Distance"));
 
-        // Create setPanel with GridBagLayout and button
-        JPanel setPanel = new JPanel(new GridBagLayout());
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(5, 5, 5, 5);
-        gbc.anchor = GridBagConstraints.CENTER;
+        // Create controlPanel
+        JSplitPane controlPanel;
+        // Left panel for text fields and labels
+        JPanel leftPanel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbcLeft = new GridBagConstraints();
+        gbcLeft.insets = new Insets(5, 5, 5, 5);
+        gbcLeft.fill = GridBagConstraints.HORIZONTAL;
+
+        JLabel[] fieldLabels = {
+                new JLabel("LatitudeMin"),
+                new JLabel("LatitudeMax"),
+                new JLabel("LongitudeMin"),
+                new JLabel("LatitudeMax"),
+        };
+        STextField[] textFields = {
+                new STextField("", 15),
+                new STextField("", 15),
+                new STextField("", 15),
+                new STextField("", 15)
+        };
+
+        for (int i = 0; i < textFields.length; i++) {
+            // Add label on the left side of the text field
+            gbcLeft.gridx = 0;
+            gbcLeft.gridy = i;
+            gbcLeft.anchor = GridBagConstraints.EAST;
+            leftPanel.add(fieldLabels[i], gbcLeft);
+
+            // Add text field
+            gbcLeft.gridx = 1;
+            gbcLeft.anchor = GridBagConstraints.WEST;
+            leftPanel.add(textFields[i], gbcLeft);
+        }
+
+        // Right panel for button and result label
+        JPanel rightPanel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbcRight = new GridBagConstraints();
+        gbcRight.insets = new Insets(10, 10, 10, 10);
+        gbcRight.fill = GridBagConstraints.HORIZONTAL;
+
+        // Add button at the top of the right panel
         SButton setButton = new SButton("Set");
-        setPanel.add(setButton, gbc);
+        gbcRight.gridx = 0;
+        gbcRight.gridy = 0;
+        gbcRight.anchor = GridBagConstraints.CENTER;
+        rightPanel.add(setButton, gbcRight);
+
+        // Add result label below the button
+        Cell<String> result = new Cell<>("Result");
+        SLabel resultLabel = new SLabel(result);
+        gbcRight.gridx = 0;
+        gbcRight.gridy = 1;
+        gbcRight.anchor = GridBagConstraints.CENTER;
+        rightPanel.add(resultLabel, gbcRight);
+
+        controlPanel = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, leftPanel, rightPanel);
+        controlPanel.setDividerLocation(300);
+        controlPanel.setResizeWeight(0.5);
 
         // Create JSplitPane with textPanel and setPanel
-        JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, textPanel, setPanel);
-        splitPane.setResizeWeight(0.8);
+        JSplitPane vertSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, textPanel, controlPanel);
+        vertSplitPane.setResizeWeight(0.8);
 
         // Add the split pane to the main panel
-        panel.add(splitPane, BorderLayout.CENTER);
+        panel.add(vertSplitPane, BorderLayout.CENTER);
         panel.setBorder(BorderFactory.createTitledBorder(title));
 
-        /* Core Logic Begin **/
+        /* Core Event-Drive Logic Begin **/
         TimerSystem<Long> timerSystem = new MillisecondsTimerSystem();
         Cell<Long> timer = timerSystem.time;
 
