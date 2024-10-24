@@ -291,6 +291,13 @@ public class GuiOutline {
             Cell<Boolean> thisValid = rangeVal.map(Optional::isPresent);
             allValid = allValid.lift(thisValid, (a, b) -> a && b);
         }
+        Cell<Boolean> minMaxValid = rangeVals.get(0).lift(rangeVals.get(1), rangeVals.get(2), rangeVals.get(3), (a, b, c, d) -> {
+            if (a.isPresent() && b.isPresent() && c.isPresent() && d.isPresent()) {
+                return a.get() > b.get() && c.get() > d.get();
+            }
+            return false;
+        });
+        allValid = allValid.lift(minMaxValid, (a, b) -> a && b);
 
         Stream<String> storeResult = setButton.sClicked
                 .snapshot(latMin.text.lift(latMax.text, lonMin.text, lonMax.text, (a,b,c,d)
