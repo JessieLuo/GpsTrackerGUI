@@ -7,14 +7,17 @@ import swidgets.STextField;
 
 import javax.swing.*;
 import java.awt.*;
+import java.lang.reflect.Array;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.util.Objects;
+import java.util.*;
+import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.ArrayList;
 
 public class GuiOutline {
     private final JFrame frame = new JFrame("GPS Tracking Application");
@@ -163,23 +166,28 @@ public class GuiOutline {
         // Left panel for text fields and labels
         JPanel leftPanel = new JPanel(new GridBagLayout());
         GridBagConstraints gbcLeft = new GridBagConstraints();
-        gbcLeft.insets = new Insets(5, 5, 5, 5);
+        gbcLeft.insets = new Insets(10, 10, 10, 10);
         gbcLeft.fill = GridBagConstraints.HORIZONTAL;
 
         JLabel[] fieldLabels = {
-                new JLabel("LatitudeMin"),
-                new JLabel("LatitudeMax"),
-                new JLabel("LongitudeMin"),
-                new JLabel("LatitudeMax"),
-        };
-        STextField[] textFields = {
-                new STextField("", 15),
-                new STextField("", 15),
-                new STextField("", 15),
-                new STextField("", 15)
+                new JLabel("LatitudeMax(-90, 90)"),
+                new JLabel("LatitudeMin(-90, 90)"),
+                new JLabel("LongitudeMax(-180, 180)"),
+                new JLabel("LatitudeMin(-180, 180)"),
         };
 
-        for (int i = 0; i < textFields.length; i++) {
+        STextField latMax = new STextField("", 15);
+        STextField latMin = new STextField("", 15);
+        STextField lonMax = new STextField("", 15);
+        STextField lonMin = new STextField("", 15);
+
+        List<STextField> textFields = new ArrayList<>();
+        textFields.add(latMax);
+        textFields.add(latMin);
+        textFields.add(lonMax);
+        textFields.add(lonMin);
+
+        for (int i = 0; i < textFields.size(); i++) {
             // Add label on the left side of the text field
             gbcLeft.gridx = 0;
             gbcLeft.gridy = i;
@@ -189,24 +197,107 @@ public class GuiOutline {
             // Add text field
             gbcLeft.gridx = 1;
             gbcLeft.anchor = GridBagConstraints.WEST;
-            leftPanel.add(textFields[i], gbcLeft);
+            leftPanel.add(textFields.get(i), gbcLeft);
         }
+
+        // Add button at the bottom of the left panel
+        SButton setButton = new SButton("Set");
+        gbcLeft.gridx = 0;
+        gbcLeft.gridy = textFields.size();
+        gbcLeft.gridwidth = 2;
+        gbcLeft.anchor = GridBagConstraints.SOUTH;
+        leftPanel.add(setButton, gbcLeft);
 
         // Right panel for button and result label
         JPanel rightPanel = new JPanel(new GridBagLayout());
         GridBagConstraints gbcRight = new GridBagConstraints();
-        gbcRight.insets = new Insets(10, 10, 10, 10);
+        gbcRight.insets = new Insets(5, 5, 5, 5);
         gbcRight.fill = GridBagConstraints.HORIZONTAL;
 
-        // Add button at the top of the right panel
-        SButton setButton = new SButton("Set");
-        gbcRight.gridx = 0;
-        gbcRight.gridy = 0;
-        gbcRight.anchor = GridBagConstraints.CENTER;
-        rightPanel.add(setButton, gbcRight);
+        // Add result label
+        /*Core part: decide if input valid*/
+        List<Cell<Optional<Double>>> rangeVals = new ArrayList<>();
+        Cell<Optional<Double>> latMaxVal = textFields.get(0).text.map(t -> {
+            t = t.trim();
+            if (t.isEmpty()) {
+                return Optional.empty();
+            }
+            try{
+                double lat = Double.parseDouble(t);
+                if (lat >= -90 && lat <= 90) {
+                    return Optional.of(lat);
+                } else {
+                    return Optional.empty();
+                }
+            } catch (NumberFormatException e){
+                return Optional.empty();
+            }
+        });
+        Cell<Optional<Double>> latMinVal = textFields.get(1).text.map(t -> {
+            t = t.trim();
+            if (t.isEmpty()) {
+                return Optional.empty();
+            }
+            try{
+                double lat = Double.parseDouble(t);
+                if (lat >= -90 && lat <= 90) {
+                    return Optional.of(lat);
+                } else {
+                    return Optional.empty();
+                }
+            } catch (NumberFormatException e){
+                return Optional.empty();
+            }
+        });
+        Cell<Optional<Double>> lonMaxVal = textFields.get(2).text.map(t -> {
+            t = t.trim();
+            if (t.isEmpty()) {
+                return Optional.empty();
+            }
+            try{
+                double lon = Double.parseDouble(t);
+                if (lon >= -180 && lon <= 180) {
+                    return Optional.of(lon);
+                } else {
+                    return Optional.empty();
+                }
+            } catch (NumberFormatException e){
+                return Optional.empty();
+            }
+        });;
+        Cell<Optional<Double>> lonMinVal = textFields.get(3).text.map(t -> {
+            t = t.trim();
+            if (t.isEmpty()) {
+                return Optional.empty();
+            }
+            try{
+                double lon = Double.parseDouble(t);
+                if (lon >= -180 && lon <= 180) {
+                    return Optional.of(lon);
+                } else {
+                    return Optional.empty();
+                }
+            } catch (NumberFormatException e){
+                return Optional.empty();
+            }
+        });
+        rangeVals.add(latMaxVal);
+        rangeVals.add(latMinVal);
+        rangeVals.add(lonMaxVal);
+        rangeVals.add(lonMinVal);
 
-        // Add result label below the button
-        Cell<String> result = new Cell<>("Result");
+        Cell<Boolean> allValid = new Cell<>(true);
+        for (Cell<Optional<Double>> rangeVal : rangeVals) {
+            Cell<Boolean> thisValid = rangeVal.map(Optional::isPresent);
+            allValid = allValid.lift(thisValid, (a, b) -> a && b);
+        }
+
+        Stream<String> storeResult = setButton.sClicked
+                .snapshot(latMin.text.lift(latMax.text, lonMin.text, lonMax.text, (a,b,c,d)
+                        -> String.format("Latitude(" + a + ", " + b + ")" + " Longitude(" + c + ", " + d + ")")));
+        Stream<String> showResult = storeResult.snapshot(allValid, (l, r) -> r ? l : "Input must Numeric; All Max must greater Min");
+        Cell<String> result = showResult.hold("Defined Range");
+
         SLabel resultLabel = new SLabel(result);
         gbcRight.gridx = 0;
         gbcRight.gridy = 1;
@@ -214,8 +305,9 @@ public class GuiOutline {
         rightPanel.add(resultLabel, gbcRight);
 
         controlPanel = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, leftPanel, rightPanel);
-        controlPanel.setDividerLocation(300);
+        controlPanel.setDividerLocation(500);
         controlPanel.setResizeWeight(0.5);
+        controlPanel.setBorder(BorderFactory.createTitledBorder("Restrict Dimension"));
 
         // Create JSplitPane with textPanel and setPanel
         JSplitPane vertSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, textPanel, controlPanel);
