@@ -7,17 +7,17 @@ import swidgets.STextField;
 
 import javax.swing.*;
 import java.awt.*;
-import java.lang.reflect.Array;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.util.*;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.ArrayList;
 
 public class GuiOutline {
     private final JFrame frame = new JFrame("GPS Tracking Application");
@@ -169,13 +169,13 @@ public class GuiOutline {
         gbcLeft.insets = new Insets(10, 10, 10, 10);
         gbcLeft.fill = GridBagConstraints.HORIZONTAL;
 
-        JLabel[] fieldLabels = {
-                new JLabel("LatitudeMax(-90, 90)"),
-                new JLabel("LatitudeMin(-90, 90)"),
-                new JLabel("LongitudeMax(-180, 180)"),
-                new JLabel("LatitudeMin(-180, 180)"),
-        };
+        List<JLabel> fieldLabels = new ArrayList<>();
+        fieldLabels.add(new JLabel("LatitudeMax(-90, 90)"));
+        fieldLabels.add(new JLabel("LatitudeMin(-90, 90)"));
+        fieldLabels.add(new JLabel("LongitudeMax(-180, 180)"));
+        fieldLabels.add(new JLabel("LatitudeMin(-180, 180)"));
 
+        // Use the elements frequently, so retain the variables
         STextField latMax = new STextField("", 15);
         STextField latMin = new STextField("", 15);
         STextField lonMax = new STextField("", 15);
@@ -192,7 +192,7 @@ public class GuiOutline {
             gbcLeft.gridx = 0;
             gbcLeft.gridy = i;
             gbcLeft.anchor = GridBagConstraints.EAST;
-            leftPanel.add(fieldLabels[i], gbcLeft);
+            leftPanel.add(fieldLabels.get(i), gbcLeft);
 
             // Add text field
             gbcLeft.gridx = 1;
@@ -215,97 +215,37 @@ public class GuiOutline {
         gbcRight.fill = GridBagConstraints.HORIZONTAL;
 
         // Add result label
-        /*Core part: decide if input valid*/
+        /* Core part: validate input fields */
         List<Cell<Optional<Double>>> rangeVals = new ArrayList<>();
-        Cell<Optional<Double>> latMaxVal = textFields.get(0).text.map(t -> {
-            t = t.trim();
-            if (t.isEmpty()) {
-                return Optional.empty();
-            }
-            try{
-                double lat = Double.parseDouble(t);
-                if (lat >= -90 && lat <= 90) {
-                    return Optional.of(lat);
-                } else {
-                    return Optional.empty();
-                }
-            } catch (NumberFormatException e){
-                return Optional.empty();
-            }
-        });
-        Cell<Optional<Double>> latMinVal = textFields.get(1).text.map(t -> {
-            t = t.trim();
-            if (t.isEmpty()) {
-                return Optional.empty();
-            }
-            try{
-                double lat = Double.parseDouble(t);
-                if (lat >= -90 && lat <= 90) {
-                    return Optional.of(lat);
-                } else {
-                    return Optional.empty();
-                }
-            } catch (NumberFormatException e){
-                return Optional.empty();
-            }
-        });
-        Cell<Optional<Double>> lonMaxVal = textFields.get(2).text.map(t -> {
-            t = t.trim();
-            if (t.isEmpty()) {
-                return Optional.empty();
-            }
-            try{
-                double lon = Double.parseDouble(t);
-                if (lon >= -180 && lon <= 180) {
-                    return Optional.of(lon);
-                } else {
-                    return Optional.empty();
-                }
-            } catch (NumberFormatException e){
-                return Optional.empty();
-            }
-        });;
-        Cell<Optional<Double>> lonMinVal = textFields.get(3).text.map(t -> {
-            t = t.trim();
-            if (t.isEmpty()) {
-                return Optional.empty();
-            }
-            try{
-                double lon = Double.parseDouble(t);
-                if (lon >= -180 && lon <= 180) {
-                    return Optional.of(lon);
-                } else {
-                    return Optional.empty();
-                }
-            } catch (NumberFormatException e){
-                return Optional.empty();
-            }
-        });
-        rangeVals.add(latMaxVal);
-        rangeVals.add(latMinVal);
-        rangeVals.add(lonMaxVal);
-        rangeVals.add(lonMinVal);
+        rangeVals.add(convertValue(textFields.get(0), -90, 90));
+        rangeVals.add(convertValue(textFields.get(1), -90, 90));
+        rangeVals.add(convertValue(textFields.get(2), -180, 180));
+        rangeVals.add(convertValue(textFields.get(3), -180, 180));
 
+        // Ensure all inputs value are valid
         Cell<Boolean> allValid = new Cell<>(true);
+
         for (Cell<Optional<Double>> rangeVal : rangeVals) {
-            Cell<Boolean> thisValid = rangeVal.map(Optional::isPresent);
-            allValid = allValid.lift(thisValid, (a, b) -> a && b);
+            Cell<Boolean> noEmptyValid = rangeVal.map(Optional::isPresent); // ensure no empty
+            allValid = allValid.lift(noEmptyValid, (a, b) -> a && b);
         }
         Cell<Boolean> minMaxValid = rangeVals.get(0).lift(rangeVals.get(1), rangeVals.get(2), rangeVals.get(3), (a, b, c, d) -> {
             if (a.isPresent() && b.isPresent() && c.isPresent() && d.isPresent()) {
-                return a.get() > b.get() && c.get() > d.get();
+                return a.get() > b.get() && c.get() > d.get(); // ensure max value greater min value
             }
             return false;
         });
-        allValid = allValid.lift(minMaxValid, (a, b) -> a && b);
+        allValid = allValid.lift(minMaxValid, (a, b) -> a && b); // combine all conditions together
 
         Stream<String> storeResult = setButton.sClicked
-                .snapshot(latMin.text.lift(latMax.text, lonMin.text, lonMax.text, (a,b,c,d)
+                .snapshot(latMin.text.lift(latMax.text, lonMin.text, lonMax.text, (a, b, c, d)
                         -> String.format("Latitude(" + a + ", " + b + ")" + " Longitude(" + c + ", " + d + ")")));
-        Stream<String> showResult = storeResult.snapshot(allValid, (l, r) -> r ? l : "Input must Numeric; All Max must greater Min");
-        Cell<String> result = showResult.hold("Defined Range");
+        // Filter: only all conditions true can propagate the event
+        Stream<String> showResult = storeResult.snapshot(allValid, (text, cond) -> cond ? text : "Input must Numeric; All Max must greater Min");
 
-        SLabel resultLabel = new SLabel(result);
+        // Adjust result label panel
+        Cell<String> result = showResult.hold("");
+        SLabel resultLabel = new SLabel(result); // Display user input once button clicked
         gbcRight.gridx = 0;
         gbcRight.gridy = 1;
         gbcRight.anchor = GridBagConstraints.CENTER;
@@ -354,6 +294,25 @@ public class GuiOutline {
         }
 
         return panel;
+    }
+
+    private Cell<Optional<Double>> convertValue(STextField textField, double min, double max) {
+        return textField.text.map(t -> {
+            t = t.trim();
+            if (t.isEmpty()) {
+                return Optional.empty();
+            }
+            try {
+                double val = Double.parseDouble(t);
+                if (val >= min && val <= max) {
+                    return Optional.of(val);
+                } else {
+                    return Optional.empty();
+                }
+            } catch (NumberFormatException e) {
+                return Optional.empty();
+            }
+        });
     }
 
     public void show() {
