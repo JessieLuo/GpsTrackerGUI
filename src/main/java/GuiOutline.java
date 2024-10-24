@@ -269,27 +269,50 @@ public class GuiOutline {
         Cell<Long> timer = timerSystem.time;
 
         // TODO: use filtered gpsEvents in future
-        Stream<GpsEvent>[] filteredGpsEvents;
-        for (Stream<GpsEvent> evStream : gpsEvents) {
-            Cell<String> trackerId = evStream.map(ev -> ev.name).hold("");
-            Cell<String> latitude = evStream.map(ev -> String.valueOf(ev.latitude)).hold("");
-            Cell<String> longitude = evStream.map(ev -> String.valueOf(ev.longitude)).hold("");
-            Cell<String> altitude = evStream.map(ev -> String.valueOf(ev.altitude)).hold("");
-            Cell<String> timeStamp = evStream
+
+        Stream<GpsEvent> filteredEvents = gpsEvents[0];
+        for (int i = 1; i < gpsEvents.length; i++) {
+            // Filter events
+            Cell<Double> lat = gpsEvents[i].map(ev -> ev.latitude).hold(0.0);
+            Cell<Double> lon = gpsEvents[i].map(ev -> ev.longitude).hold(0.0);
+
+            Cell<Boolean> isValid = new Cell<>(true);
+            Cell<Boolean> latValid = lat.lift(rangeVals.get(0), rangeVals.get(1), (a, b, c) -> {
+                if (b.isPresent() && c.isPresent()) {
+                    return a > c.get() && a < b.get(); // current event latitude greater latMin less than latMax
+                }
+                return false;
+            });
+            Cell<Boolean> lonValid = lon.lift(rangeVals.get(2), rangeVals.get(3), (a, b, c) -> {
+                if (b.isPresent() && c.isPresent()) {
+                    return a > c.get() && a < b.get(); // current event longitude greater lonMin less than latMax
+                }
+                return false;
+            });
+            isValid = isValid.lift(latValid, lonValid, (a, b, c) -> a && b && c);
+
+            filteredEvents = filteredEvents.orElse(gpsEvents[i]).snapshot(isValid, (ev, val) -> val ? ev : null).filter(Objects::nonNull);
+
+            // Start Showing events
+            Cell<String> trackerId = filteredEvents.map(ev -> ev.name).hold("");
+            Cell<String> latitude = filteredEvents.map(ev -> String.valueOf(ev.latitude)).hold("");
+            Cell<String> longitude = filteredEvents.map(ev -> String.valueOf(ev.longitude)).hold("");
+            Cell<String> altitude = filteredEvents.map(ev -> String.valueOf(ev.altitude)).hold("");
+            Cell<String> timeStamp = filteredEvents
                     .snapshot(timer).hold(System.currentTimeMillis())
                     .map(this::formatTime);
 
-            SLabel id = new SLabel(trackerId);
-            SLabel lat = new SLabel(latitude);
-            SLabel lon = new SLabel(longitude);
-            SLabel time = new SLabel(timeStamp);
+            SLabel ids = new SLabel(trackerId);
+            SLabel lats = new SLabel(latitude);
+            SLabel lons = new SLabel(longitude);
+            SLabel times = new SLabel(timeStamp);
             // need change
             SLabel dist = new SLabel(altitude);
 
-            textPanel.add(id);
-            textPanel.add(lat);
-            textPanel.add(lon);
-            textPanel.add(time);
+            textPanel.add(ids);
+            textPanel.add(lats);
+            textPanel.add(lons);
+            textPanel.add(times);
             textPanel.add(dist);
         }
 
