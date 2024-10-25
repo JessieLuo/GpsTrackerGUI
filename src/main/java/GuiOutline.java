@@ -150,7 +150,7 @@ public class GuiOutline {
     }
 
     public JPanel FilteredTrackerDisplayPanel(String title, Stream<GpsEvent>[] gpsEvents) {
-        /* Set GUI **/
+        /* Setting GUI **/
         JPanel panel = new JPanel(new BorderLayout());
 
         // Create textPanel
@@ -160,12 +160,13 @@ public class GuiOutline {
 
         // Create controlPanel
         JSplitPane controlPanel;
-        // Left panel for text fields and labels
+        // Left sub-controlPanel for text fields and labels
         JPanel leftPanel = new JPanel(new GridBagLayout());
         GridBagConstraints gbcLeft = new GridBagConstraints();
         gbcLeft.insets = new Insets(10, 10, 10, 10);
         gbcLeft.fill = GridBagConstraints.HORIZONTAL;
 
+        // Input tips
         List<JLabel> fieldLabels = new ArrayList<>();
         fieldLabels.add(new JLabel("LatitudeMax(-90, 90)"));
         fieldLabels.add(new JLabel("LatitudeMin(-90, 90)"));
@@ -197,7 +198,7 @@ public class GuiOutline {
             leftPanel.add(textFields.get(i), gbcLeft);
         }
 
-        // Add button at the bottom of the left panel
+        // Add button at the bottom of the input textFiled
         SButton setButton = new SButton("Set");
         gbcLeft.gridx = 0;
         gbcLeft.gridy = textFields.size();
@@ -308,20 +309,20 @@ public class GuiOutline {
         Cell<String> longitude = filteredEvents.map(ev -> "Longitude" + ev.longitude).hold("");
         Cell<String> altitude = filteredEvents.map(ev -> "Distance" + ev.altitude).hold("");
         Cell<String> timeStamp = filteredEvents.snapshot(timer).map(t -> "Time" + formatTime(t)).hold("");
-        SLabel ids = new SLabel(trackerId);
-        SLabel lats = new SLabel(latitude);
-        SLabel lons = new SLabel(longitude);
-        SLabel times = new SLabel(timeStamp);
-        SLabel dist = new SLabel(altitude); // TODO: need change to real calculation
-        currentTextPanel.add(ids);
+        SLabel filterId = new SLabel(trackerId);
+        SLabel filterLat = new SLabel(latitude);
+        SLabel filterLon = new SLabel(longitude);
+        SLabel filterTime = new SLabel(timeStamp);
+        SLabel filterDist = new SLabel(altitude); // TODO: need change to real calculation
+        currentTextPanel.add(filterId);
         currentTextPanel.add(Box.createRigidArea(new Dimension(50, 0)));
-        currentTextPanel.add(lats);
+        currentTextPanel.add(filterLat);
         currentTextPanel.add(Box.createRigidArea(new Dimension(50, 0)));
-        currentTextPanel.add(lons);
+        currentTextPanel.add(filterLon);
         currentTextPanel.add(Box.createRigidArea(new Dimension(50, 0)));
-        currentTextPanel.add(times);
+        currentTextPanel.add(filterTime);
         currentTextPanel.add(Box.createRigidArea(new Dimension(50, 0)));
-        currentTextPanel.add(dist);
+        currentTextPanel.add(filterDist);
         currentTextPanel.add(Box.createRigidArea(new Dimension(50, 0)));
         textSubPanels.add(currentTextPanel);
 
@@ -366,7 +367,7 @@ public class GuiOutline {
 }
 
 /**
- * Helper class
+ * Helper class to print tracker element
  */
 class GpsData {
     public final String trackerID;
@@ -382,7 +383,6 @@ class GpsData {
     }
 
     public String toString() {
-
         return trackerID + ", Latitude " + latitude + ", Longitude " + longitude + ", Time: " + formatTime(time);
     }
 
