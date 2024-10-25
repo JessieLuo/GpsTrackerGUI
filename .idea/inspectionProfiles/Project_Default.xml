@@ -6,5 +6,8 @@
         <language minSize="47" name="Java" />
       </Languages>
     </inspection_tool>
+    <inspection_tool class="EqualsWithItself" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoreNonFinalClassesInTest" value="true" />
+    </inspection_tool>
   </profile>
 </component>

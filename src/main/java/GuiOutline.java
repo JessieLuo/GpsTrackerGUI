@@ -275,12 +275,6 @@ public class GuiOutline {
                 Cell<Double> alt = gpsEvent.map(ev -> ev.altitude * 0.3048).hold(0.0); // convert feet to meter
                 Cell<Long> time = gpsEvent.snapshot(timer).hold(0L);
 
-                // Start calculate
-                Stream<Position> holdPosition = gpsEvent.map(ev -> new Position(ev.latitude, ev.longitude, ev.altitude * 0.3048));
-                Cell<Position> position = holdPosition.hold(new Position(0,0,0));
-                Stream<Double> calDist = holdPosition.snapshot(position, GuiOutline::calculateDistance);
-                Cell<Double> dist = calDist.hold(0.0);
-
                 // Start filter
                 Cell<Boolean> isValid = new Cell<>(true);
                 Cell<Boolean> latValid = lat.lift(latMaxAfterClick, latMinAfterClick, (evLat, max, min)
@@ -288,6 +282,12 @@ public class GuiOutline {
                 Cell<Boolean> lonValid = lon.lift(lonMaxAfterClick, lonMinAfterClick, (evLon, max, min)
                         -> max.isPresent() && min.isPresent() && evLon < max.get() && evLon > min.get());
                 isValid = isValid.lift(latValid, lonValid, (a, b, c) -> a && b && c);
+
+                // calculate distance
+                Stream<Position> holdPosition = gpsEvent.map(ev -> new Position(ev.latitude, ev.longitude, ev.altitude * 0.3048));
+                Cell<Position> position = holdPosition.hold(new Position(0,0,0));
+                Stream<Double> calDist = holdPosition.snapshot(position, GuiOutline::calculateDistance);
+                Cell<Double> dist = calDist.hold(0.0);
 
                 // Define output value
                 Cell<String> fId = id.lift(isValid, (l, r) -> r ? l : "");
@@ -311,7 +311,6 @@ public class GuiOutline {
             }
         });
 
-        // Finalise GUI addition
         // Create JSplitPane with textPanel and setPanel
         JSplitPane vertSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, textPanel, controlPanel);
         vertSplitPane.setResizeWeight(0.8);
