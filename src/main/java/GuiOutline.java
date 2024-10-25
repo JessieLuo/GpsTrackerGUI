@@ -114,7 +114,7 @@ public class GuiOutline {
             }, 0, 1, TimeUnit.SECONDS);
 
             // Hold the latest system time in a cell
-            Cell<Long> sysTimeCell = sysTimeStream.hold(System.currentTimeMillis());
+            Cell<Long> sysTimeValue = sysTimeStream.hold(System.currentTimeMillis());
 
             // merge all coming in events as last event
             Stream<GpsEvent> lastGpsStream = gpsEvents[0];
@@ -130,7 +130,7 @@ public class GuiOutline {
             prevData.loop(sSetNew.filter(Objects::nonNull).hold(new GpsData("", "", "", 0L)));
 
             Cell<String> clean = new Cell<>("");
-            Cell<String> content = clean.lift(sysTimeCell, prevData, (empty, sysTime, cont)
+            Cell<String> content = clean.lift(sysTimeValue, prevData, (empty, sysTime, cont)
                     -> (sysTime - cont.time > 3000) ? empty : cont).map(Object::toString);
 
             SLabel currentEventTexts = new SLabel(content);
@@ -203,7 +203,27 @@ public class GuiOutline {
         }
 
         // Add button at the bottom of the input textFiled
-        SButton setButton = new SButton("Set");
+        List<Cell<Optional<Double>>> rangeVals = new ArrayList<>();
+        rangeVals.add(convertValue(textFields.get(0), -90, 90));
+        rangeVals.add(convertValue(textFields.get(1), -90, 90));
+        rangeVals.add(convertValue(textFields.get(2), -180, 180));
+        rangeVals.add(convertValue(textFields.get(3), -180, 180));
+        // Ensure all inputs value are valid
+        Cell<Boolean> allValid = new Cell<>(true);
+        for (Cell<Optional<Double>> rangeVal : rangeVals) {
+            Cell<Boolean> noEmptyValid = rangeVal.map(Optional::isPresent); // ensure no empty
+            allValid = allValid.lift(noEmptyValid, (a, b) -> a && b);
+        }
+        Cell<Boolean> minMaxValid = rangeVals.get(0).lift(rangeVals.get(1), rangeVals.get(2), rangeVals.get(3), (a, b, c, d) ->
+                a.isPresent() && b.isPresent() && c.isPresent() && d.isPresent() &&
+                        a.get() > b.get() && c.get() > d.get()); // Ensure max value greater min
+        Cell<Boolean> rangeValid = rangeVals.get(0).lift(rangeVals.get(1), rangeVals.get(2), rangeVals.get(3), (a, b, c, d) ->
+                a.isPresent() && b.isPresent() && c.isPresent() && d.isPresent() &&
+                        a.get() >= -90 && b.get() <= 90 && c.get() >= -180 && d.get() <= 180);
+
+        allValid = allValid.lift(minMaxValid, rangeValid, (a, b, c) -> a && b && c); // combine all conditions together
+
+        SButton setButton = new SButton("Set", allValid); // only all input valid can click the button
         gbcLeft.gridx = 0;
         gbcLeft.gridy = textFields.size();
         gbcLeft.gridwidth = 2;
@@ -217,37 +237,11 @@ public class GuiOutline {
         gbcRight.fill = GridBagConstraints.HORIZONTAL;
 
         // Add result label
-        /* Core part: validate input fields */
         Stream<String> storeResult = setButton.sClicked
                 .snapshot(latMin.text.lift(latMax.text, lonMin.text, lonMax.text, (a, b, c, d)
                         -> String.format("Latitude(" + a + ", " + b + ")" + " Longitude(" + c + ", " + d + ")")));
-
-        // TODO: This logic duplicate with core-event-drive logic part, but this logic currently used for print string not directly use double value; consider how to combine them finally
-        List<Cell<Optional<Double>>> rangeVals = new ArrayList<>();
-        rangeVals.add(convertValue(textFields.get(0), -90, 90));
-        rangeVals.add(convertValue(textFields.get(1), -90, 90));
-        rangeVals.add(convertValue(textFields.get(2), -180, 180));
-        rangeVals.add(convertValue(textFields.get(3), -180, 180));
-
-        // Ensure all inputs value are valid
-        Cell<Boolean> allValid = new Cell<>(true);
-
-        for (Cell<Optional<Double>> rangeVal : rangeVals) {
-            Cell<Boolean> noEmptyValid = rangeVal.map(Optional::isPresent); // ensure no empty
-            allValid = allValid.lift(noEmptyValid, (a, b) -> a && b);
-        }
-        Cell<Boolean> minMaxValid = rangeVals.get(0).lift(rangeVals.get(1), rangeVals.get(2), rangeVals.get(3), (a, b, c, d) ->
-                a.isPresent() && b.isPresent() && c.isPresent() && d.isPresent() &&
-                a.get() > b.get() && c.get() > d.get());
-        allValid = allValid.lift(minMaxValid, (a, b) -> a && b); // combine all conditions together
-
-        // Filter: only all conditions true can propagate the event
-        Stream<String> showResult = storeResult.snapshot(allValid, (text, cond)
-                -> cond ? text : "Input must Numeric; All Max must greater Min");
-
-        // Adjust result label panel
-        Cell<String> result = showResult.hold("");
-        SLabel resultLabel = new SLabel(result); // Display user input once button clicked
+        Cell<String> result = storeResult.hold("Input must: numeric(include -); max > min");
+        SLabel resultLabel = new SLabel(result);
         gbcRight.gridx = 0;
         gbcRight.gridy = 1;
         gbcRight.anchor = GridBagConstraints.CENTER;
@@ -260,55 +254,59 @@ public class GuiOutline {
 
         /* Core Event-Drive Logic Begin **/
         // Provide a cell to acquire time when event fired
-        TimerSystem<Long> timerSystem = new MillisecondsTimerSystem();
-        Cell<Long> timer = timerSystem.time;
-        // Only update the restriction when click button
-        Cell<Optional<Double>> latMaxAfterClick = setButton.sClicked
-                .snapshot(rangeVals.get(0), (u, r) -> r).hold(Optional.empty());
-        Cell<Optional<Double>> latMinAfterClick = setButton.sClicked
-                .snapshot(rangeVals.get(1), (u, r) -> r).hold(Optional.empty());
-        Cell<Optional<Double>> lonMaxAfterClick = setButton.sClicked
-                .snapshot(rangeVals.get(2), (u, r) -> r).hold(Optional.empty());
-        Cell<Optional<Double>> lonMinAfterClick = setButton.sClicked
-                .snapshot(rangeVals.get(3), (u, r) -> r).hold(Optional.empty());
+        Transaction.runVoid(() -> {
+            TimerSystem<Long> timerSystem = new MillisecondsTimerSystem();
+            Cell<Long> timer = timerSystem.time;
+            // Only update the restriction when click button
+            Cell<Optional<Double>> latMaxAfterClick = setButton.sClicked
+                    .snapshot(rangeVals.get(0), (u, r) -> r).hold(Optional.empty());
+            Cell<Optional<Double>> latMinAfterClick = setButton.sClicked
+                    .snapshot(rangeVals.get(1), (u, r) -> r).hold(Optional.empty());
+            Cell<Optional<Double>> lonMaxAfterClick = setButton.sClicked
+                    .snapshot(rangeVals.get(2), (u, r) -> r).hold(Optional.empty());
+            Cell<Optional<Double>> lonMinAfterClick = setButton.sClicked
+                    .snapshot(rangeVals.get(3), (u, r) -> r).hold(Optional.empty());
 
-        for (Stream<GpsEvent> gpsEvent : gpsEvents) {
-            // Extract value
-            Cell<String> id = gpsEvent.map(ev -> ev.name).hold("");
-            Cell<Double> lat = gpsEvent.map(ev -> ev.latitude).hold(0.0);
-            Cell<Double> lon = gpsEvent.map(ev -> ev.longitude).hold(0.0);
-            Cell<Double> alt = gpsEvent.map(ev -> ev.altitude).hold(0.0);
-            Cell<Long> time = gpsEvent.snapshot(timer).hold(0L);
+            for (Stream<GpsEvent> gpsEvent : gpsEvents) {
+                // Extract value
+                Cell<String> id = gpsEvent.map(ev -> ev.name).hold("");
+                Cell<Double> lat = gpsEvent.map(ev -> ev.latitude).hold(0.0);
+                Cell<Double> lon = gpsEvent.map(ev -> ev.longitude).hold(0.0);
+                Cell<Double> alt = gpsEvent.map(ev -> ev.altitude * 0.3048).hold(0.0); // convert feet to meter
+                Cell<Long> time = gpsEvent.snapshot(timer).hold(0L);
 
-            // Start filter
-            Cell<Boolean> isValid = new Cell<>(true);
-            Cell<Boolean> latValid = lat.lift(latMaxAfterClick, latMinAfterClick, (evLat, max, min)
-                    -> max.isPresent() && min.isPresent() && evLat < max.get() && evLat > min.get());
-            Cell<Boolean> lonValid = lon.lift(lonMaxAfterClick, lonMinAfterClick, (evLon, max, min)
-                    -> max.isPresent() && min.isPresent() && evLon < max.get() && evLon > min.get());
-            isValid = isValid.lift(latValid, lonValid, (a, b, c) -> a && b && c);
+                Stream<Boolean> sCalculate;
+                Cell<Double> dist;
 
-            // Define output value
-            Cell<String> fId = id.lift(isValid, (l, r) -> r ? l : "");
-            Cell<String> fLat = lat.lift(isValid, (l, r) -> r ? String.valueOf(l) : "");
-            Cell<String> fLon = lon.lift(isValid, (l, r) -> r ? String.valueOf(l) : "");
-            Cell<String> fTime = time.lift(isValid, (l, r) -> r ? formatTime(l) : "");
-            Cell<String> fDist = alt.lift(isValid, (l, r) -> r ? String.valueOf(l) : "");
+                // Start filter
+                Cell<Boolean> isValid = new Cell<>(true);
+                Cell<Boolean> latValid = lat.lift(latMaxAfterClick, latMinAfterClick, (evLat, max, min)
+                        -> max.isPresent() && min.isPresent() && evLat < max.get() && evLat > min.get());
+                Cell<Boolean> lonValid = lon.lift(lonMaxAfterClick, lonMinAfterClick, (evLon, max, min)
+                        -> max.isPresent() && min.isPresent() && evLon < max.get() && evLon > min.get());
+                isValid = isValid.lift(latValid, lonValid, (a, b, c) -> a && b && c);
 
-            // TODO: Start Calculate Distance
-            //
-            SLabel filterId = new SLabel(fId);
-            SLabel filterLat = new SLabel(fLat);
-            SLabel filterLon = new SLabel(fLon);
-            SLabel filterTime = new SLabel(fTime);
-            SLabel filterDist = new SLabel(fDist);
+                // Define output value
+                Cell<String> fId = id.lift(isValid, (l, r) -> r ? l : "");
+                Cell<String> fLat = lat.lift(isValid, (l, r) -> r ? String.valueOf(l) : "");
+                Cell<String> fLon = lon.lift(isValid, (l, r) -> r ? String.valueOf(l) : "");
+                Cell<String> fTime = time.lift(isValid, (l, r) -> r ? formatTime(l) : "");
+                Cell<String> fDist = alt.lift(isValid, (l, r) -> r ? String.valueOf(l) : ""); // TODO: notice ensure put dist in
 
-            textPanel.add(filterId);
-            textPanel.add(filterLat);
-            textPanel.add(filterLon);
-            textPanel.add(filterTime);
-            textPanel.add(filterDist);
-        }
+                // Add GUI elements in
+                SLabel filterId = new SLabel(fId);
+                SLabel filterLat = new SLabel(fLat);
+                SLabel filterLon = new SLabel(fLon);
+                SLabel filterTime = new SLabel(fTime);
+                SLabel filterDist = new SLabel(fDist);
+
+                textPanel.add(filterId);
+                textPanel.add(filterLat);
+                textPanel.add(filterLon);
+                textPanel.add(filterTime);
+                textPanel.add(filterDist);
+            }
+        });
 
         // Finalise GUI addition
         // Create JSplitPane with textPanel and setPanel
@@ -320,6 +318,7 @@ public class GuiOutline {
         return mainPanel;
     }
 
+    // Helper method to safely convert input string to double value
     private Cell<Optional<Double>> convertValue(STextField textField, double min, double max) {
         return textField.text.map(t -> {
             t = t.trim();
@@ -341,6 +340,48 @@ public class GuiOutline {
 
     public void show() {
         frame.setVisible(true);
+    }
+
+    // Calculate the Haversine distance between two positions in meters
+    private double calculateDistance(Position pos1, Position pos2) {
+        if (pos1 == null || pos2 == null) return 0.0;
+
+        // Earth's radius in meters
+        double horizontalDistance = getHorizontalDistance(pos1, pos2);
+
+        // Calculate vertical distance (altitude difference)
+        double deltaAlt = pos2.altitude - pos1.altitude;
+
+        // Use Pythagorean theorem to calculate the 3D distance
+        return Math.sqrt(horizontalDistance * horizontalDistance + deltaAlt * deltaAlt);
+    }
+
+    // Calculate 2D distance which would applied for 3D
+    private double getHorizontalDistance(Position pos1, Position pos2) {
+        double lat1 = Math.toRadians(pos1.latitude);
+        double lat2 = Math.toRadians(pos2.latitude);
+        double deltaLat = Math.toRadians(pos2.latitude - pos1.latitude);
+        double deltaLon = Math.toRadians(pos2.longitude - pos1.longitude);
+
+        // Haversine formula
+        double a = Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
+                Math.cos(lat1) * Math.cos(lat2) *
+                        Math.sin(deltaLon / 2) * Math.sin(deltaLon / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return 6371000.0 * c;
+    }
+
+    // Position class to hold latitude, longitude, and altitude
+    static class Position {
+        final double latitude;
+        final double longitude;
+        final double altitude;
+
+        Position(double latitude, double longitude, double altitude) {
+            this.latitude = latitude;
+            this.longitude = longitude;
+            this.altitude = altitude;
+        }
     }
 
 }
