@@ -275,8 +275,11 @@ public class GuiOutline {
                 Cell<Double> alt = gpsEvent.map(ev -> ev.altitude * 0.3048).hold(0.0); // convert feet to meter
                 Cell<Long> time = gpsEvent.snapshot(timer).hold(0L);
 
-                Stream<Boolean> sCalculate;
-                Cell<Double> dist;
+                // Start calculate
+                Stream<Position> holdPosition = gpsEvent.map(ev -> new Position(ev.latitude, ev.longitude, ev.altitude * 0.3048));
+                Cell<Position> position = holdPosition.hold(new Position(0,0,0));
+                Stream<Double> calDist = holdPosition.snapshot(position, GuiOutline::calculateDistance);
+                Cell<Double> dist = calDist.hold(0.0);
 
                 // Start filter
                 Cell<Boolean> isValid = new Cell<>(true);
@@ -291,7 +294,7 @@ public class GuiOutline {
                 Cell<String> fLat = lat.lift(isValid, (l, r) -> r ? String.valueOf(l) : "");
                 Cell<String> fLon = lon.lift(isValid, (l, r) -> r ? String.valueOf(l) : "");
                 Cell<String> fTime = time.lift(isValid, (l, r) -> r ? formatTime(l) : "");
-                Cell<String> fDist = alt.lift(isValid, (l, r) -> r ? String.valueOf(l) : ""); // TODO: notice ensure put dist in
+                Cell<String> fDist = dist.lift(isValid, (l, r) -> r ? String.valueOf(l) : ""); // TODO: notice ensure put dist in
 
                 // Add GUI elements in
                 SLabel filterId = new SLabel(fId);
@@ -343,7 +346,7 @@ public class GuiOutline {
     }
 
     // Calculate the Haversine distance between two positions in meters
-    private double calculateDistance(Position pos1, Position pos2) {
+    public static double calculateDistance(Position pos1, Position pos2) {
         if (pos1 == null || pos2 == null) return 0.0;
 
         // Earth's radius in meters
@@ -357,7 +360,7 @@ public class GuiOutline {
     }
 
     // Calculate 2D distance which would applied for 3D
-    private double getHorizontalDistance(Position pos1, Position pos2) {
+    private static double getHorizontalDistance(Position pos1, Position pos2) {
         double lat1 = Math.toRadians(pos1.latitude);
         double lat2 = Math.toRadians(pos2.latitude);
         double deltaLat = Math.toRadians(pos2.latitude - pos1.latitude);
@@ -371,51 +374,4 @@ public class GuiOutline {
         return 6371000.0 * c;
     }
 
-    // Position class to hold latitude, longitude, and altitude
-    static class Position {
-        final double latitude;
-        final double longitude;
-        final double altitude;
-
-        Position(double latitude, double longitude, double altitude) {
-            this.latitude = latitude;
-            this.longitude = longitude;
-            this.altitude = altitude;
-        }
-    }
-
-}
-
-/**
- * Helper class to print tracker element
- */
-class GpsData {
-    public final String trackerID;
-    public final String latitude;
-    public final String longitude;
-    public final Long time;
-
-    public GpsData(String trackerID, String latitude, String longitude, Long time) {
-        this.trackerID = trackerID;
-        this.latitude = latitude;
-        this.longitude = longitude;
-        this.time = time;
-    }
-
-    public String toString() {
-        return trackerID + ", Latitude " + latitude + ", Longitude " + longitude + ", Time: " + formatTime(time);
-    }
-
-    public boolean equals(GpsData other) {
-        return this.trackerID.equals(other.trackerID) &&
-                this.latitude.equals(other.latitude) &&
-                this.longitude.equals(other.longitude);
-    }
-
-    private String formatTime(long time) {
-        DateTimeFormatter TIME_FORMATTER = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss");
-        Instant instant = Instant.ofEpochMilli(time);
-        LocalDateTime localDateTime = LocalDateTime.ofInstant(instant, ZoneId.systemDefault());
-        return localDateTime.format(TIME_FORMATTER);
-    }
 }
