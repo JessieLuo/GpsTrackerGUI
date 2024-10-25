@@ -151,12 +151,16 @@ public class GuiOutline {
 
     public JPanel FilteredTrackerDisplayPanel(String title, Stream<GpsEvent>[] gpsEvents) {
         /* Setting GUI **/
-        JPanel panel = new JPanel(new BorderLayout());
+        JPanel mainPanel = new JPanel(new BorderLayout());
 
         // Create textPanel
-        JPanel textPanel = new JPanel();
-        textPanel.setLayout(new BoxLayout(textPanel, BoxLayout.Y_AXIS));
-        List<JPanel> textSubPanels = new ArrayList<>();
+        JPanel textPanel = new JPanel(new GridLayout(rowCount + 1, 5, 5, 5));
+        textPanel.setBorder(BorderFactory.createTitledBorder(title));
+        textPanel.add(new JLabel("ID"));
+        textPanel.add(new JLabel("Latitude"));
+        textPanel.add(new JLabel("Longitude"));
+        textPanel.add(new JLabel("Time"));
+        textPanel.add(new JLabel("Distance"));
 
         // Create controlPanel
         JSplitPane controlPanel;
@@ -232,16 +236,14 @@ public class GuiOutline {
             Cell<Boolean> noEmptyValid = rangeVal.map(Optional::isPresent); // ensure no empty
             allValid = allValid.lift(noEmptyValid, (a, b) -> a && b);
         }
-        Cell<Boolean> minMaxValid = rangeVals.get(0).lift(rangeVals.get(1), rangeVals.get(2), rangeVals.get(3), (a, b, c, d) -> {
-            if (a.isPresent() && b.isPresent() && c.isPresent() && d.isPresent()) {
-                return a.get() > b.get() && c.get() > d.get(); // ensure max value greater min value
-            }
-            return false;
-        });
+        Cell<Boolean> minMaxValid = rangeVals.get(0).lift(rangeVals.get(1), rangeVals.get(2), rangeVals.get(3), (a, b, c, d) ->
+                a.isPresent() && b.isPresent() && c.isPresent() && d.isPresent() &&
+                a.get() > b.get() && c.get() > d.get());
         allValid = allValid.lift(minMaxValid, (a, b) -> a && b); // combine all conditions together
 
         // Filter: only all conditions true can propagate the event
-        Stream<String> showResult = storeResult.snapshot(allValid, (text, cond) -> cond ? text : "Input must Numeric; All Max must greater Min");
+        Stream<String> showResult = storeResult.snapshot(allValid, (text, cond)
+                -> cond ? text : "Input must Numeric; All Max must greater Min");
 
         // Adjust result label panel
         Cell<String> result = showResult.hold("");
@@ -257,88 +259,65 @@ public class GuiOutline {
         controlPanel.setBorder(BorderFactory.createTitledBorder("Restrict Dimension"));
 
         /* Core Event-Drive Logic Begin **/
+        // Provide a cell to acquire time when event fired
         TimerSystem<Long> timerSystem = new MillisecondsTimerSystem();
         Cell<Long> timer = timerSystem.time;
-
         // Only update the restriction when click button
-        Cell<Optional<Double>> latMaxAfterClick = setButton.sClicked.snapshot(rangeVals.get(0), (u, r) -> r).hold(Optional.empty());
-        Cell<Optional<Double>> latMinAfterClick = setButton.sClicked.snapshot(rangeVals.get(1), (u, r) -> r).hold(Optional.empty());
-        Cell<Optional<Double>> lonMaxAfterClick = setButton.sClicked.snapshot(rangeVals.get(2), (u, r) -> r).hold(Optional.empty());
-        Cell<Optional<Double>> lonMinAfterClick = setButton.sClicked.snapshot(rangeVals.get(3), (u, r) -> r).hold(Optional.empty());
+        Cell<Optional<Double>> latMaxAfterClick = setButton.sClicked
+                .snapshot(rangeVals.get(0), (u, r) -> r).hold(Optional.empty());
+        Cell<Optional<Double>> latMinAfterClick = setButton.sClicked
+                .snapshot(rangeVals.get(1), (u, r) -> r).hold(Optional.empty());
+        Cell<Optional<Double>> lonMaxAfterClick = setButton.sClicked
+                .snapshot(rangeVals.get(2), (u, r) -> r).hold(Optional.empty());
+        Cell<Optional<Double>> lonMinAfterClick = setButton.sClicked
+                .snapshot(rangeVals.get(3), (u, r) -> r).hold(Optional.empty());
 
-        // TODO: Currently only can receive one event fit restriction; need accept all in future; also need consider how to refine dynamic panel addition
-        Stream<GpsEvent> filteredEvents = gpsEvents[0];
-        for (int i = 1; i < gpsEvents.length; i++) {
-            // Filter events
-            Cell<Double> lat = gpsEvents[i].map(ev -> ev.latitude).hold(0.0);
-            Cell<Double> lon = gpsEvents[i].map(ev -> ev.longitude).hold(0.0);
+        for (Stream<GpsEvent> gpsEvent : gpsEvents) {
+            // Extract value
+            Cell<String> id = gpsEvent.map(ev -> ev.name).hold("");
+            Cell<Double> lat = gpsEvent.map(ev -> ev.latitude).hold(0.0);
+            Cell<Double> lon = gpsEvent.map(ev -> ev.longitude).hold(0.0);
+            Cell<Double> alt = gpsEvent.map(ev -> ev.altitude).hold(0.0);
+            Cell<Long> time = gpsEvent.snapshot(timer).hold(0L);
+
+            // Start filter
             Cell<Boolean> isValid = new Cell<>(true);
-            Cell<Boolean> latValid = lat.lift(latMaxAfterClick, latMinAfterClick, (evLat, max, min) -> {
-                if (max.isPresent() && min.isPresent()) {
-                    System.out.println("Current GPS Lat " + evLat);
-                    System.out.println("Current Max Lat " + max.get());
-                    System.out.println("Current Min Lat " + min.get());
-                    return evLat < max.get() && evLat > min.get();
-                }
-                return false;
-            });
-            Cell<Boolean> lonValid = lon.lift(lonMaxAfterClick, lonMinAfterClick, (evLon, max, min) -> {
-                if (max.isPresent() && min.isPresent()) {
-                    System.out.println("Current GPS Lon " + evLon);
-                    System.out.println("Current Max Lon " + max.get());
-                    System.out.println("Current Min Lon " + min.get());
-                    return evLon < max.get() && evLon > min.get();
-                }
-                return false;
-            });
-            isValid = isValid.lift(latValid, lonValid, (a, b, c) -> {
-                System.out.println();
-                System.out.println("Current latValid status " + b);
-                System.out.println("Current lonValid status " + c);
-                System.out.println();
-                return a && b && c;
-            });
-            filteredEvents = filteredEvents.orElse(gpsEvents[i]).snapshot(isValid, (ev, val) -> val ? ev : null).filter(Objects::nonNull);
-        }
+            Cell<Boolean> latValid = lat.lift(latMaxAfterClick, latMinAfterClick, (evLat, max, min)
+                    -> max.isPresent() && min.isPresent() && evLat < max.get() && evLat > min.get());
+            Cell<Boolean> lonValid = lon.lift(lonMaxAfterClick, lonMinAfterClick, (evLon, max, min)
+                    -> max.isPresent() && min.isPresent() && evLon < max.get() && evLon > min.get());
+            isValid = isValid.lift(latValid, lonValid, (a, b, c) -> a && b && c);
 
-        JPanel currentTextPanel = new JPanel();
-        currentTextPanel.setLayout(new BoxLayout(currentTextPanel, BoxLayout.X_AXIS));
-        // Start Showing events
-        Cell<String> trackerId = filteredEvents.map(ev -> ev.name).hold("No Tracker Now");
-        Cell<String> latitude = filteredEvents.map(ev -> "Latitude" + ev.latitude).hold("");
-        Cell<String> longitude = filteredEvents.map(ev -> "Longitude" + ev.longitude).hold("");
-        Cell<String> altitude = filteredEvents.map(ev -> "Distance" + ev.altitude).hold("");
-        Cell<String> timeStamp = filteredEvents.snapshot(timer).map(t -> "Time" + formatTime(t)).hold("");
-        SLabel filterId = new SLabel(trackerId);
-        SLabel filterLat = new SLabel(latitude);
-        SLabel filterLon = new SLabel(longitude);
-        SLabel filterTime = new SLabel(timeStamp);
-        SLabel filterDist = new SLabel(altitude); // TODO: need change to real calculation
-        currentTextPanel.add(filterId);
-        currentTextPanel.add(Box.createRigidArea(new Dimension(50, 0)));
-        currentTextPanel.add(filterLat);
-        currentTextPanel.add(Box.createRigidArea(new Dimension(50, 0)));
-        currentTextPanel.add(filterLon);
-        currentTextPanel.add(Box.createRigidArea(new Dimension(50, 0)));
-        currentTextPanel.add(filterTime);
-        currentTextPanel.add(Box.createRigidArea(new Dimension(50, 0)));
-        currentTextPanel.add(filterDist);
-        currentTextPanel.add(Box.createRigidArea(new Dimension(50, 0)));
-        textSubPanels.add(currentTextPanel);
+            // Define output value
+            Cell<String> fId = id.lift(isValid, (l, r) -> r ? l : "");
+            Cell<String> fLat = lat.lift(isValid, (l, r) -> r ? String.valueOf(l) : "");
+            Cell<String> fLon = lon.lift(isValid, (l, r) -> r ? String.valueOf(l) : "");
+            Cell<String> fTime = time.lift(isValid, (l, r) -> r ? formatTime(l) : "");
+            Cell<String> fDist = alt.lift(isValid, (l, r) -> r ? String.valueOf(l) : "");
+
+            // TODO: Start Calculate Distance
+            //
+            SLabel filterId = new SLabel(fId);
+            SLabel filterLat = new SLabel(fLat);
+            SLabel filterLon = new SLabel(fLon);
+            SLabel filterTime = new SLabel(fTime);
+            SLabel filterDist = new SLabel(fDist);
+
+            textPanel.add(filterId);
+            textPanel.add(filterLat);
+            textPanel.add(filterLon);
+            textPanel.add(filterTime);
+            textPanel.add(filterDist);
+        }
 
         // Finalise GUI addition
-        for (JPanel subPanel : textSubPanels) {
-            System.out.println("We have " + textSubPanels.size() + " sub panels now");
-            textPanel.add(subPanel);
-        }
         // Create JSplitPane with textPanel and setPanel
         JSplitPane vertSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, textPanel, controlPanel);
         vertSplitPane.setResizeWeight(0.8);
         // Add the split pane to the main panel
-        panel.add(vertSplitPane, BorderLayout.CENTER);
-        panel.setBorder(BorderFactory.createTitledBorder(title));
+        mainPanel.add(vertSplitPane, BorderLayout.CENTER);
 
-        return panel;
+        return mainPanel;
     }
 
     private Cell<Optional<Double>> convertValue(STextField textField, double min, double max) {
