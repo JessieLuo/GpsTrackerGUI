@@ -159,28 +159,51 @@ public class GuiOutline {
 
     /* Single Display (1) -- Part I Ten simplifier tracker  */
     public JPanel TrackerDisplayPanel(String title, Stream<GpsEvent>[] gpsEvents) {
-        int columnCount = 3; // Columns: Tracker ID, Lat, Lon
-        int rowCount = gpsEvents.length;
-        JPanel panel = new JPanel(new GridLayout(rowCount + 1, columnCount, 5, 5)); // +1 for the header row
+        List<List<Cell<String>>> frpCells = simplifiedTrackers(gpsEvents);
+
+        return simplifyDisplayGUI(title, frpCells);
+    }
+
+    public static List<List<Cell<String>>> simplifiedTrackers(Stream<GpsEvent>[] gpsEvents) {
+        List<Cell<String>> trackerIds = new ArrayList<>();
+        List<Cell<String>> latitudes = new ArrayList<>();
+        List<Cell<String>> longitudes = new ArrayList<>();
+
+        for (Stream<GpsEvent> evStream : gpsEvents) {
+            trackerIds.add(evStream.map(ev -> ev.name).hold(""));
+            latitudes.add(evStream.map(ev -> String.valueOf(ev.latitude)).hold(""));
+            longitudes.add(evStream.map(ev -> String.valueOf(ev.longitude)).hold(""));
+        }
+
+        List<List<Cell<String>>> cells = new ArrayList<>();
+        cells.add(trackerIds);
+        cells.add(latitudes);
+        cells.add(longitudes);
+
+        return cells;
+    }
+
+    private JPanel simplifyDisplayGUI(String title, List<List<Cell<String>>> cells) {
+        int columnCount = 3; // Columns: Tracker ID, Latitude, Longitude
+        int rowCount = cells.get(0).size();
+
+        JPanel panel = new JPanel(new GridLayout(rowCount + 1, columnCount, 5, 5)); // +1 for header row
         panel.setBorder(BorderFactory.createTitledBorder(title));
 
+        // Add header labels
         panel.add(new JLabel("ID"));
         panel.add(new JLabel("Latitude"));
         panel.add(new JLabel("Longitude"));
 
-        // show each stream for each tracker
-        for (Stream<GpsEvent> evStream : gpsEvents) {
-            Cell<String> trackerId = evStream.map(ev -> ev.name).hold("");
-            Cell<String> latitude = evStream.map(ev -> String.valueOf(ev.latitude)).hold("");
-            Cell<String> longitude = evStream.map(ev -> String.valueOf(ev.longitude)).hold("");
+        // Bind each Cell list to SLabel components and add them to the panel
+        for (int i = 0; i < rowCount; i++) {
+            SLabel idLabel = new SLabel(cells.get(0).get(i));
+            SLabel latLabel = new SLabel(cells.get(1).get(i));
+            SLabel lonLabel = new SLabel(cells.get(2).get(i));
 
-            SLabel id = new SLabel(trackerId);
-            SLabel lat = new SLabel(latitude);
-            SLabel lon = new SLabel(longitude);
-
-            panel.add(id);
-            panel.add(lat);
-            panel.add(lon);
+            panel.add(idLabel);
+            panel.add(latLabel);
+            panel.add(lonLabel);
         }
 
         return panel;
