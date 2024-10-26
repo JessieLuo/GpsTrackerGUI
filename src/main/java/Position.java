@@ -7,11 +7,17 @@ public class Position {
     final double latitude;
     final double longitude;
     final double altitude;
+    final Long time;
 
     Position(double latitude, double longitude, double altitude) {
+        this(latitude, longitude, altitude, System.currentTimeMillis());
+    }
+
+    Position(double latitude, double longitude, double altitude, Long time) {
         this.latitude = latitude;
         this.longitude = longitude;
         this.altitude = altitude;
+        this.time = time;
     }
 
     @Override

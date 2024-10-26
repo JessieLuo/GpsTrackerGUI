@@ -85,6 +85,7 @@ public class GuiOutline {
         });
     }
 
+    // GUI initialization: combine all panels to the window
     private void initializeComponents() {
         // Set up the main frame
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -133,7 +134,7 @@ public class GuiOutline {
         panel.add(new JLabel("Latitude"));
         panel.add(new JLabel("Longitude"));
 
-        // Data rows for each stream
+        // show each stream for each tracker
         for (Stream<GpsEvent> evStream : gpsEvents) {
             Cell<String> trackerId = evStream.map(ev -> ev.name).hold("");
             Cell<String> latitude = evStream.map(ev -> String.valueOf(ev.latitude)).hold("");
@@ -323,13 +324,17 @@ public class GuiOutline {
             Map<String, Position> positionsRecord = new HashMap<>();
             // store each tracker travelled distance
             Map<String, Double> totalDistancesRecord = new HashMap<>();
+            // record current event fired time
+            Map<String, Long> totalTimeRecord = new HashMap<>();
+            // only events cumulative pass time met condition, record the distance, this is sliding window idea
+            Map<String, Double> timeBasedTotalDistRecord = new HashMap<>();
             for (Stream<GpsEvent> gpsEvent : gpsEvents) {
                 // Extract value
                 Cell<String> id = gpsEvent.map(ev -> ev.name).hold("");
                 Cell<Double> lat = gpsEvent.map(ev -> ev.latitude).hold(0.0);
                 Cell<Double> lon = gpsEvent.map(ev -> ev.longitude).hold(0.0);
                 Cell<Double> alt = gpsEvent.map(ev -> ev.altitude * 0.3048).hold(0.0); // convert feet to meter
-                Cell<Long> time = gpsEvent.snapshot(timer).hold(0L);
+                Cell<Long> time = gpsEvent.snapshot(timer).hold(0L); // event occurs time
 
                 // Start filter
                 Cell<Boolean> isValid = new Cell<>(true);
@@ -340,23 +345,36 @@ public class GuiOutline {
                 isValid = isValid.lift(latValid, lonValid, (a, b, c) -> a && b && c);
 
                 // calculate distance
-                Cell<Double> dist = isValid.lift(id, lat, lon, alt, (cond, pId, p1, p2, p3) -> {
+                Cell<Double> dist = isValid.lift(id, lat, lon, alt, time, (cond, pId, p1, p2, p3, t) -> {
                     if (cond) {
-                        Position currentPosition = new Position(p1, p2, p3);
+                        Position currentPosition = new Position(p1, p2, p3, t);
 
-                        double distance = 0.0;
+                        double distance;
+
+                        Long timePassed;
 
                         // If current ID exist, add dist to previous
                         if (positionsRecord.containsKey(pId)) {
                             Position lastPosition = positionsRecord.get(pId);
                             distance = calculateDistance(lastPosition, currentPosition);
 
+                            // Record each two position distance for the same id
                             totalDistancesRecord.put(pId, totalDistancesRecord.getOrDefault(pId, 0.0) + distance);
+
+                            timePassed = t - lastPosition.time;
+                            totalTimeRecord.put(pId, totalTimeRecord.getOrDefault(pId, 0L) + timePassed);
+
+                            // Only record each 60 seconds total distance
+                            // TODO: notice, currently use 5 sec for test
+                            if (totalTimeRecord.getOrDefault(pId, 0L) >= 60000) {
+                                totalTimeRecord.put(pId, totalTimeRecord.get(pId) - 60000); // reset cumulative time
+                                timeBasedTotalDistRecord.put(pId, totalDistancesRecord.getOrDefault(pId, 0.0));
+                            }
                         }
 
                         positionsRecord.put(pId, currentPosition);
 
-                        return totalDistancesRecord.getOrDefault(pId, 0.0) + distance;
+                        return timeBasedTotalDistRecord.getOrDefault(pId, 0.0);
                     }
                     return 0.0;
                 });
