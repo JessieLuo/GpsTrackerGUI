@@ -11,10 +11,8 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -28,6 +26,63 @@ public class GuiOutline {
         this.gpsEvents = gpsEvents;
         this.rowCount = gpsEvents.length;
         initializeComponents();
+    }
+
+    // Format time as H:M:S
+    public static String formatTime(long time) {
+        DateTimeFormatter TIME_FORMATTER = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss");
+        Instant instant = Instant.ofEpochMilli(time);
+        LocalDateTime localDateTime = LocalDateTime.ofInstant(instant, ZoneId.systemDefault());
+        return localDateTime.format(TIME_FORMATTER);
+    }
+
+    // Calculate the Haversine distance between two positions in meters
+    public static double calculateDistance(Position pos1, Position pos2) {
+        if (pos1 == null || pos2 == null) return 0.0;
+
+        // Earth's radius in meters
+        double horizontalDistance = getHorizontalDistance(pos1, pos2);
+
+        // Calculate vertical distance (altitude difference)
+        double deltaAlt = pos2.altitude - pos1.altitude;
+
+        // Use Pythagorean theorem to calculate the 3D distance
+        return Math.sqrt(horizontalDistance * horizontalDistance + deltaAlt * deltaAlt);
+    }
+
+    // Calculate 2D distance which would applied for 3D
+    private static double getHorizontalDistance(Position pos1, Position pos2) {
+        double lat1 = Math.toRadians(pos1.latitude);
+        double lat2 = Math.toRadians(pos2.latitude);
+        double deltaLat = Math.toRadians(pos2.latitude - pos1.latitude);
+        double deltaLon = Math.toRadians(pos2.longitude - pos1.longitude);
+
+        // Haversine formula
+        double a = Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
+                Math.cos(lat1) * Math.cos(lat2) *
+                        Math.sin(deltaLon / 2) * Math.sin(deltaLon / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return 6371000.0 * c;
+    }
+
+    // safely convert input string to double value
+    private static Cell<Optional<Double>> convertInputs(STextField textField, double min, double max) {
+        return textField.text.map(t -> {
+            t = t.trim();
+            if (t.isEmpty()) {
+                return Optional.empty();
+            }
+            try {
+                double val = Double.parseDouble(t);
+                if (val >= min && val <= max) {
+                    return Optional.of(val);
+                } else {
+                    return Optional.empty();
+                }
+            } catch (NumberFormatException e) {
+                return Optional.empty();
+            }
+        });
     }
 
     private void initializeComponents() {
@@ -68,7 +123,7 @@ public class GuiOutline {
         frame.add(mainPanel, BorderLayout.CENTER);
     }
 
-    // Create a panel to display all tracker events
+    /* Single Display (1) -- Part I Ten simplifier tracker  */
     public JPanel TrackerDisplayPanel(String title, Stream<GpsEvent>[] gpsEvents) {
         int columnCount = 3; // Columns: Tracker ID, Lat, Lon
         JPanel panel = new JPanel(new GridLayout(rowCount + 1, columnCount, 5, 5)); // +1 for the header row
@@ -96,6 +151,7 @@ public class GuiOutline {
         return panel;
     }
 
+    /* Single Display (1) -- Part II Current Event coming in */
     public JPanel CurrentTrackerPanel(String title, Stream<GpsEvent>[] gpsEvents) {
         JPanel panel = new JPanel(new GridLayout(1, 1, 5, 5));
         panel.setBorder(BorderFactory.createTitledBorder(title));
@@ -141,14 +197,7 @@ public class GuiOutline {
         return panel;
     }
 
-    // Format time as H:M:S
-    private String formatTime(long time) {
-        DateTimeFormatter TIME_FORMATTER = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss");
-        Instant instant = Instant.ofEpochMilli(time);
-        LocalDateTime localDateTime = LocalDateTime.ofInstant(instant, ZoneId.systemDefault());
-        return localDateTime.format(TIME_FORMATTER);
-    }
-
+    /* Single Display (2) -- Include setting button, input textFields and filtered tracker displays */
     public JPanel FilteredTrackerDisplayPanel(String title, Stream<GpsEvent>[] gpsEvents) {
         /* Setting GUI **/
         JPanel mainPanel = new JPanel(new BorderLayout());
@@ -164,31 +213,32 @@ public class GuiOutline {
 
         // Create controlPanel
         JSplitPane controlPanel;
-        // Left sub-controlPanel for text fields and labels
+
+        // Left sub-controlPanel for text fields with labels and setting button
         JPanel leftPanel = new JPanel(new GridBagLayout());
         GridBagConstraints gbcLeft = new GridBagConstraints();
         gbcLeft.insets = new Insets(10, 10, 10, 10);
         gbcLeft.fill = GridBagConstraints.HORIZONTAL;
 
-        // Input tips
+        // Input text labels
         List<JLabel> fieldLabels = new ArrayList<>();
         fieldLabels.add(new JLabel("LatitudeMax(-90, 90)"));
         fieldLabels.add(new JLabel("LatitudeMin(-90, 90)"));
         fieldLabels.add(new JLabel("LongitudeMax(-180, 180)"));
         fieldLabels.add(new JLabel("LatitudeMin(-180, 180)"));
 
+        // Input text fields
+        List<STextField> textFields = new ArrayList<>();
         // Use the elements frequently, so retain the variables
         STextField latMax = new STextField("", 15);
         STextField latMin = new STextField("", 15);
         STextField lonMax = new STextField("", 15);
         STextField lonMin = new STextField("", 15);
-
-        List<STextField> textFields = new ArrayList<>();
         textFields.add(latMax);
         textFields.add(latMin);
         textFields.add(lonMax);
         textFields.add(lonMin);
-
+        // add textFields and labels to sub-leftpanel
         for (int i = 0; i < textFields.size(); i++) {
             // Add label on the left side of the text field
             gbcLeft.gridx = 0;
@@ -202,12 +252,12 @@ public class GuiOutline {
             leftPanel.add(textFields.get(i), gbcLeft);
         }
 
-        // Add button at the bottom of the input textFiled
+        // Prepare setting button click-available condition first
         List<Cell<Optional<Double>>> rangeVals = new ArrayList<>();
-        rangeVals.add(convertValue(textFields.get(0), -90, 90));
-        rangeVals.add(convertValue(textFields.get(1), -90, 90));
-        rangeVals.add(convertValue(textFields.get(2), -180, 180));
-        rangeVals.add(convertValue(textFields.get(3), -180, 180));
+        rangeVals.add(convertInputs(textFields.get(0), -90, 90));
+        rangeVals.add(convertInputs(textFields.get(1), -90, 90));
+        rangeVals.add(convertInputs(textFields.get(2), -180, 180));
+        rangeVals.add(convertInputs(textFields.get(3), -180, 180));
         // Ensure all inputs value are valid
         Cell<Boolean> allValid = new Cell<>(true);
         for (Cell<Optional<Double>> rangeVal : rangeVals) {
@@ -223,6 +273,7 @@ public class GuiOutline {
 
         allValid = allValid.lift(minMaxValid, rangeValid, (a, b, c) -> a && b && c); // combine all conditions together
 
+        // Setting Button
         SButton setButton = new SButton("Set", allValid); // only all input valid can click the button
         gbcLeft.gridx = 0;
         gbcLeft.gridy = textFields.size();
@@ -230,7 +281,7 @@ public class GuiOutline {
         gbcLeft.anchor = GridBagConstraints.SOUTH;
         leftPanel.add(setButton, gbcLeft);
 
-        // Right panel for button and result label
+        // Right panel for result label
         JPanel rightPanel = new JPanel(new GridBagLayout());
         GridBagConstraints gbcRight = new GridBagConstraints();
         gbcRight.insets = new Insets(5, 5, 5, 5);
@@ -247,6 +298,7 @@ public class GuiOutline {
         gbcRight.anchor = GridBagConstraints.CENTER;
         rightPanel.add(resultLabel, gbcRight);
 
+        // Combine left-sub and right-sub to control panel (include input with labels, button and result)
         controlPanel = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, leftPanel, rightPanel);
         controlPanel.setDividerLocation(500);
         controlPanel.setResizeWeight(0.5);
@@ -267,6 +319,7 @@ public class GuiOutline {
             Cell<Optional<Double>> lonMinAfterClick = setButton.sClicked
                     .snapshot(rangeVals.get(3), (u, r) -> r).hold(Optional.empty());
 
+            // TODO: initially want to add filtered events to arrayList, however, the events so huge so make the list may exceed maximum
             for (Stream<GpsEvent> gpsEvent : gpsEvents) {
                 // Extract value
                 Cell<String> id = gpsEvent.map(ev -> ev.name).hold("");
@@ -284,8 +337,12 @@ public class GuiOutline {
                 isValid = isValid.lift(latValid, lonValid, (a, b, c) -> a && b && c);
 
                 // calculate distance
+
+                Map<String, Position> lastPositions = new HashMap<>(); // store all coming event position, ensure same tracker id
+                Map<String, Double> totalDistances = new HashMap<>();
+
                 Stream<Position> holdPosition = gpsEvent.map(ev -> new Position(ev.latitude, ev.longitude, ev.altitude * 0.3048));
-                Cell<Position> position = holdPosition.hold(new Position(0,0,0));
+                Cell<Position> position = holdPosition.hold(new Position(0, 0, 0));
                 Stream<Double> calDist = holdPosition.snapshot(position, GuiOutline::calculateDistance);
                 Cell<Double> dist = calDist.hold(0.0);
 
@@ -311,7 +368,7 @@ public class GuiOutline {
             }
         });
 
-        // Create JSplitPane with textPanel and setPanel
+        // Create JSplitPane with textPanel and controlPanel
         JSplitPane vertSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, textPanel, controlPanel);
         vertSplitPane.setResizeWeight(0.8);
         // Add the split pane to the main panel
@@ -320,57 +377,8 @@ public class GuiOutline {
         return mainPanel;
     }
 
-    // Helper method to safely convert input string to double value
-    private Cell<Optional<Double>> convertValue(STextField textField, double min, double max) {
-        return textField.text.map(t -> {
-            t = t.trim();
-            if (t.isEmpty()) {
-                return Optional.empty();
-            }
-            try {
-                double val = Double.parseDouble(t);
-                if (val >= min && val <= max) {
-                    return Optional.of(val);
-                } else {
-                    return Optional.empty();
-                }
-            } catch (NumberFormatException e) {
-                return Optional.empty();
-            }
-        });
-    }
-
     public void show() {
         frame.setVisible(true);
-    }
-
-    // Calculate the Haversine distance between two positions in meters
-    public static double calculateDistance(Position pos1, Position pos2) {
-        if (pos1 == null || pos2 == null) return 0.0;
-
-        // Earth's radius in meters
-        double horizontalDistance = getHorizontalDistance(pos1, pos2);
-
-        // Calculate vertical distance (altitude difference)
-        double deltaAlt = pos2.altitude - pos1.altitude;
-
-        // Use Pythagorean theorem to calculate the 3D distance
-        return Math.sqrt(horizontalDistance * horizontalDistance + deltaAlt * deltaAlt);
-    }
-
-    // Calculate 2D distance which would applied for 3D
-    private static double getHorizontalDistance(Position pos1, Position pos2) {
-        double lat1 = Math.toRadians(pos1.latitude);
-        double lat2 = Math.toRadians(pos2.latitude);
-        double deltaLat = Math.toRadians(pos2.latitude - pos1.latitude);
-        double deltaLon = Math.toRadians(pos2.longitude - pos1.longitude);
-
-        // Haversine formula
-        double a = Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
-                Math.cos(lat1) * Math.cos(lat2) *
-                        Math.sin(deltaLon / 2) * Math.sin(deltaLon / 2);
-        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        return 6371000.0 * c;
     }
 
 }

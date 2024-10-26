@@ -2,7 +2,7 @@ import org.junit.Test;
 
 import static org.junit.Assert.*;
 
-public class GpsData_Text {
+public class GpsData_Test {
     @Test
     public void testGpsDataConstructor() {
         GpsData gpsData = new GpsData("Tracker123", "45.0", "-75.0", 1634160000000L);
@@ -23,7 +23,8 @@ public class GpsData_Text {
     @Test
     public void testGpsDataEqualsSameObject() {
         GpsData gpsData = new GpsData("Tracker123", "45.0", "-75.0", 1634160000000L);
-        assertTrue(gpsData.equals(gpsData)); // Compare the object to itself
+        GpsData gpsDataCopy = new GpsData("Tracker123", "45.0", "-75.0", 1634160000000L);
+        assertTrue(gpsData.equals(gpsDataCopy)); // Compare the object to itself
     }
 
     @Test
