@@ -237,14 +237,14 @@ public class GuiOutline {
         /* Setting GUI **/
         JPanel mainPanel = new JPanel(new BorderLayout());
 
-        // Create textPanel
-        JPanel textPanel = new JPanel(new GridLayout(gpsEvents.length + 1, 5, 5, 5));
-        textPanel.setBorder(BorderFactory.createTitledBorder(title));
-        textPanel.add(new JLabel("ID"));
-        textPanel.add(new JLabel("Latitude"));
-        textPanel.add(new JLabel("Longitude"));
-        textPanel.add(new JLabel("Time"));
-        textPanel.add(new JLabel("Distance"));
+        // Create inputPanel
+        JPanel inputPanel = new JPanel(new GridLayout(gpsEvents.length + 1, 5, 5, 5));
+        inputPanel.setBorder(BorderFactory.createTitledBorder(title));
+        inputPanel.add(new JLabel("ID"));
+        inputPanel.add(new JLabel("Latitude"));
+        inputPanel.add(new JLabel("Longitude"));
+        inputPanel.add(new JLabel("Time"));
+        inputPanel.add(new JLabel("Distance"));
 
         // Create controlPanel
         JSplitPane controlPanel;
@@ -287,12 +287,13 @@ public class GuiOutline {
             leftPanel.add(textFields.get(i), gbcLeft);
         }
 
-        // Prepare setting button click-available condition first
+        // Prepare setting button click-available condition
         List<Cell<Optional<Double>>> rangeVals = new ArrayList<>();
         rangeVals.add(convertInputs(textFields.get(0), -90, 90));
         rangeVals.add(convertInputs(textFields.get(1), -90, 90));
         rangeVals.add(convertInputs(textFields.get(2), -180, 180));
         rangeVals.add(convertInputs(textFields.get(3), -180, 180));
+
         // Ensure all inputs value are valid
         Cell<Boolean> allValid = new Cell<>(true);
         for (Cell<Optional<Double>> rangeVal : rangeVals) {
@@ -316,7 +317,7 @@ public class GuiOutline {
         gbcLeft.anchor = GridBagConstraints.SOUTH;
         leftPanel.add(setButton, gbcLeft);
 
-        // sub-Right panel for result label
+        // Right sub-controlPanel for result label
         JPanel rightPanel = new JPanel(new GridBagLayout());
         GridBagConstraints gbcRight = new GridBagConstraints();
         gbcRight.insets = new Insets(5, 5, 5, 5);
@@ -424,16 +425,16 @@ public class GuiOutline {
                 SLabel filterTime = new SLabel(fTime);
                 SLabel filterDist = new SLabel(fDist);
 
-                textPanel.add(filterId);
-                textPanel.add(filterLat);
-                textPanel.add(filterLon);
-                textPanel.add(filterTime);
-                textPanel.add(filterDist);
+                inputPanel.add(filterId);
+                inputPanel.add(filterLat);
+                inputPanel.add(filterLon);
+                inputPanel.add(filterTime);
+                inputPanel.add(filterDist);
             }
         });
 
-        // Create JSplitPane with textPanel and controlPanel
-        JSplitPane vertSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, textPanel, controlPanel);
+        // Create JSplitPane with inputPanel and controlPanel
+        JSplitPane vertSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, inputPanel, controlPanel);
         vertSplitPane.setResizeWeight(0.8);
         // Add the split pane to the main panel
         mainPanel.add(vertSplitPane, BorderLayout.CENTER);
@@ -445,4 +446,7 @@ public class GuiOutline {
         frame.setVisible(true);
     }
 
+    public boolean isFrameVisible() {
+        return frame.isVisible();
+    }
 }
