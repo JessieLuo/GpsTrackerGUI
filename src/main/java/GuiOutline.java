@@ -337,9 +337,8 @@ public class GuiOutline {
                 isValid = isValid.lift(latValid, lonValid, (a, b, c) -> a && b && c);
 
                 // calculate distance
-
                 Map<String, Position> lastPositions = new HashMap<>(); // store all coming event position, ensure same tracker id
-                Map<String, Double> totalDistances = new HashMap<>();
+                Map<String, Double> totalDistances = new HashMap<>(); // Once two event finish calculation, store new dist
 
                 Stream<Position> holdPosition = gpsEvent.map(ev -> new Position(ev.latitude, ev.longitude, ev.altitude * 0.3048));
                 Cell<Position> position = holdPosition.hold(new Position(0, 0, 0));
