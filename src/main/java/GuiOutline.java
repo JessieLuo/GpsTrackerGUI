@@ -238,7 +238,7 @@ public class GuiOutline {
         textFields.add(latMin);
         textFields.add(lonMax);
         textFields.add(lonMin);
-        // add textFields and labels to sub-leftpanel
+        // add textFields and labels to sub-leftPanel
         for (int i = 0; i < textFields.size(); i++) {
             // Add label on the left side of the text field
             gbcLeft.gridx = 0;
@@ -281,7 +281,7 @@ public class GuiOutline {
         gbcLeft.anchor = GridBagConstraints.SOUTH;
         leftPanel.add(setButton, gbcLeft);
 
-        // Right panel for result label
+        // sub-Right panel for result label
         JPanel rightPanel = new JPanel(new GridBagLayout());
         GridBagConstraints gbcRight = new GridBagConstraints();
         gbcRight.insets = new Insets(5, 5, 5, 5);
@@ -319,7 +319,10 @@ public class GuiOutline {
             Cell<Optional<Double>> lonMinAfterClick = setButton.sClicked
                     .snapshot(rangeVals.get(3), (u, r) -> r).hold(Optional.empty());
 
-            // TODO: initially want to add filtered events to arrayList, however, the events so huge so make the list may exceed maximum
+            // separate each tracker with it current position info
+            Map<String, Position> positionsRecord = new HashMap<>();
+            // store each tracker travelled distance
+            Map<String, Double> totalDistancesRecord = new HashMap<>();
             for (Stream<GpsEvent> gpsEvent : gpsEvents) {
                 // Extract value
                 Cell<String> id = gpsEvent.map(ev -> ev.name).hold("");
@@ -337,13 +340,26 @@ public class GuiOutline {
                 isValid = isValid.lift(latValid, lonValid, (a, b, c) -> a && b && c);
 
                 // calculate distance
-                Map<String, Position> lastPositions = new HashMap<>(); // store all coming event position, ensure same tracker id
-                Map<String, Double> totalDistances = new HashMap<>(); // Once two event finish calculation, store new dist
+                Cell<Double> dist = isValid.lift(id, lat, lon, alt, (cond, pId, p1, p2, p3) -> {
+                    if (cond) {
+                        Position currentPosition = new Position(p1, p2, p3);
 
-                Stream<Position> holdPosition = gpsEvent.map(ev -> new Position(ev.latitude, ev.longitude, ev.altitude * 0.3048));
-                Cell<Position> position = holdPosition.hold(new Position(0, 0, 0));
-                Stream<Double> calDist = holdPosition.snapshot(position, GuiOutline::calculateDistance);
-                Cell<Double> dist = calDist.hold(0.0);
+                        double distance = 0.0;
+
+                        // If current ID exist, add dist to previous
+                        if (positionsRecord.containsKey(pId)) {
+                            Position lastPosition = positionsRecord.get(pId);
+                            distance = calculateDistance(lastPosition, currentPosition);
+
+                            totalDistancesRecord.put(pId, totalDistancesRecord.getOrDefault(pId, 0.0) + distance);
+                        }
+
+                        positionsRecord.put(pId, currentPosition);
+
+                        return totalDistancesRecord.getOrDefault(pId, 0.0) + distance;
+                    }
+                    return 0.0;
+                });
 
                 // Define output value
                 Cell<String> fId = id.lift(isValid, (l, r) -> r ? l : "");
