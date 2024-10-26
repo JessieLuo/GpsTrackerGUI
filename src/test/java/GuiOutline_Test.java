@@ -3,6 +3,9 @@ import org.junit.Test;
 import static org.junit.Assert.assertEquals;
 
 public class GuiOutline_Test {
+    /* Test Display (1) */
+
+    /* Test Display (2) */
 
     /* Test distance calculate method */
     @Test

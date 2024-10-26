@@ -20,11 +20,11 @@ import java.util.concurrent.TimeUnit;
 public class GuiOutline {
     private final JFrame frame = new JFrame("GPS Tracking Application");
     private final Stream<GpsEvent>[] gpsEvents;
-    private final int rowCount;
+    // provide the time interval when calculate distance
+    private final long windowSizeMillis = 30000; // It could be modified when testing
 
     public GuiOutline(Stream<GpsEvent>[] gpsEvents) {
         this.gpsEvents = gpsEvents;
-        this.rowCount = gpsEvents.length;
         initializeComponents();
     }
 
@@ -33,10 +33,23 @@ public class GuiOutline {
         DateTimeFormatter TIME_FORMATTER = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss");
         Instant instant = Instant.ofEpochMilli(time);
         LocalDateTime localDateTime = LocalDateTime.ofInstant(instant, ZoneId.systemDefault());
+
         return localDateTime.format(TIME_FORMATTER);
     }
 
-    // Calculate the Haversine distance between two positions in meters
+    /**
+     * Calculates the 3D distance between two geographic positions, considering both the
+     * Earth's surface (horizontal) distance and altitude difference.
+     *
+     * <p>This method uses the Haversine formula to compute the horizontal distance
+     * (great-circle distance) between two points given their <b>latitude</b> and <b>longitude</b>. It then
+     * calculates the <b>altitude</b> difference and combines these values with the Pythagorean
+     * theorem to obtain the 3D distance in meters.</p>
+     *
+     * @param pos1 The first position, containing latitude, longitude, and altitude.
+     * @param pos2 The second position, containing latitude, longitude, and altitude.
+     * @return The 3D distance between the two positions in meters, or 0.0 if either position is null.
+     */
     public static double calculateDistance(Position pos1, Position pos2) {
         if (pos1 == null || pos2 == null) return 0.0;
 
@@ -50,7 +63,27 @@ public class GuiOutline {
         return Math.sqrt(horizontalDistance * horizontalDistance + deltaAlt * deltaAlt);
     }
 
-    // Calculate 2D distance which would applied for 3D
+    /**
+     * Calculates the 2D (horizontal) distance between two positions on Earth's surface
+     * using the Haversine formula.
+     *
+     * <p>The Haversine formula calculates the shortest distance over Earth's surface
+     * (great-circle distance) using latitude and longitude coordinates:</p>
+     *
+     * <pre>
+     * a = sin^2(\delta(lat) / 2) + cos(lat1) * cos(lat2) * sin^2(\delta(lon) / 2)
+     * c = 2 * atan2(\sqrt(a), \sqrt(1 - a))
+     * d = R * c
+     * </pre>
+     * <p>
+     * where:
+     * - \delta(lat) = lat2 - lat1 and \delta(lon) = lon2 - lon1
+     * - R is Earth's radius in meters (6,371,000 meters)
+     *
+     * @param pos1 The first position, containing latitude and longitude.
+     * @param pos2 The second position, containing latitude and longitude.
+     * @return The horizontal distance between the two positions in meters.
+     */
     private static double getHorizontalDistance(Position pos1, Position pos2) {
         double lat1 = Math.toRadians(pos1.latitude);
         double lat2 = Math.toRadians(pos2.latitude);
@@ -65,7 +98,7 @@ public class GuiOutline {
         return 6371000.0 * c;
     }
 
-    // safely convert input string to double value
+    // Safely convert input string to double value
     private static Cell<Optional<Double>> convertInputs(STextField textField, double min, double max) {
         return textField.text.map(t -> {
             t = t.trim();
@@ -127,6 +160,7 @@ public class GuiOutline {
     /* Single Display (1) -- Part I Ten simplifier tracker  */
     public JPanel TrackerDisplayPanel(String title, Stream<GpsEvent>[] gpsEvents) {
         int columnCount = 3; // Columns: Tracker ID, Lat, Lon
+        int rowCount = gpsEvents.length;
         JPanel panel = new JPanel(new GridLayout(rowCount + 1, columnCount, 5, 5)); // +1 for the header row
         panel.setBorder(BorderFactory.createTitledBorder(title));
 
@@ -161,34 +195,34 @@ public class GuiOutline {
             // Capture system time
             TimerSystem<Long> timerSystem = new MillisecondsTimerSystem();
             Cell<Long> timer = timerSystem.time;
-
-            // continuously emits the system time every second. This is an out-of-FRP method
+            // continuously emits the system time every second.
             StreamSink<Long> sysTimeStream = new StreamSink<>();
             ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
             scheduler.scheduleAtFixedRate(() -> {
                 long currentTime = System.currentTimeMillis();
                 sysTimeStream.send(currentTime); // Push current system time into the stream
             }, 0, 1, TimeUnit.SECONDS);
-
             // Hold the latest system time in a cell
             Cell<Long> sysTimeValue = sysTimeStream.hold(System.currentTimeMillis());
 
-            // merge all coming in events as last event
+            /* merge all coming in events as current event to show on GUI */
             Stream<GpsEvent> lastGpsStream = gpsEvents[0];
             for (int i = 1; i < gpsEvents.length; i++) {
                 lastGpsStream = lastGpsStream.orElse(gpsEvents[i]);
             }
 
-            CellLoop<GpsData> prevData = new CellLoop<>();
+            // Record data from current event
+            CellLoop<GpsData> currData = new CellLoop<>();
 
             Stream<GpsData> sWrapTime = lastGpsStream.snapshot(timer, (ev, t)
                     -> new GpsData(ev.name, String.valueOf(ev.latitude), String.valueOf(ev.longitude), t));
-            Stream<GpsData> sSetNew = sWrapTime.snapshot(prevData, (ev, c) -> !ev.equals(c) ? ev : null);
-            prevData.loop(sSetNew.filter(Objects::nonNull).hold(new GpsData("", "", "", 0L)));
+            Stream<GpsData> sSetNew = sWrapTime.snapshot(currData, (ev, c) -> !ev.equals(c) ? ev : null);
 
-            Cell<String> clean = new Cell<>("");
-            Cell<String> content = clean.lift(sysTimeValue, prevData, (empty, sysTime, cont)
-                    -> (sysTime - cont.time > 3000) ? empty : cont).map(Object::toString);
+            currData.loop(sSetNew.filter(Objects::nonNull).hold(new GpsData("", "", "", 0L)));
+
+            /* Clean event if its data not update over 3 seconds */
+            Cell<String> content = sysTimeValue.lift(currData, (sysTime, data)
+                    -> (sysTime - data.time > 3000) ? "" : data).map(Object::toString);
 
             SLabel currentEventTexts = new SLabel(content);
 
@@ -204,7 +238,7 @@ public class GuiOutline {
         JPanel mainPanel = new JPanel(new BorderLayout());
 
         // Create textPanel
-        JPanel textPanel = new JPanel(new GridLayout(rowCount + 1, 5, 5, 5));
+        JPanel textPanel = new JPanel(new GridLayout(gpsEvents.length + 1, 5, 5, 5));
         textPanel.setBorder(BorderFactory.createTitledBorder(title));
         textPanel.add(new JLabel("ID"));
         textPanel.add(new JLabel("Latitude"));
@@ -320,14 +354,12 @@ public class GuiOutline {
             Cell<Optional<Double>> lonMinAfterClick = setButton.sClicked
                     .snapshot(rangeVals.get(3), (u, r) -> r).hold(Optional.empty());
 
-            // separate each tracker with it current position info
-            Map<String, Position> positionsRecord = new HashMap<>();
-            // store each tracker travelled distance
-            Map<String, Double> totalDistancesRecord = new HashMap<>();
-            // record current event fired time
-            Map<String, Long> totalTimeRecord = new HashMap<>();
-            // only events cumulative pass time met condition, record the distance, this is sliding window idea
-            Map<String, Double> timeBasedTotalDistRecord = new HashMap<>();
+            // Record events for specific tracker
+            Map<String, Position> positionsRecord = new HashMap<>(); // separate each tracker with it current position info
+            Map<String, Double> totalDistancesRecord = new HashMap<>(); // store each tracker travelled distance
+            Map<String, Long> totalTimeRecord = new HashMap<>(); // record current event fired time
+            Map<String, Double> timeBasedTotalDistRecord = new HashMap<>(); // record the distance only events cumulative pass time equal to intervals
+
             for (Stream<GpsEvent> gpsEvent : gpsEvents) {
                 // Extract value
                 Cell<String> id = gpsEvent.map(ev -> ev.name).hold("");
@@ -336,7 +368,7 @@ public class GuiOutline {
                 Cell<Double> alt = gpsEvent.map(ev -> ev.altitude * 0.3048).hold(0.0); // convert feet to meter
                 Cell<Long> time = gpsEvent.snapshot(timer).hold(0L); // event occurs time
 
-                // Start filter
+                // Start filtering
                 Cell<Boolean> isValid = new Cell<>(true);
                 Cell<Boolean> latValid = lat.lift(latMaxAfterClick, latMinAfterClick, (evLat, max, min)
                         -> max.isPresent() && min.isPresent() && evLat < max.get() && evLat > min.get());
@@ -345,8 +377,8 @@ public class GuiOutline {
                 isValid = isValid.lift(latValid, lonValid, (a, b, c) -> a && b && c);
 
                 // calculate distance
-                Cell<Double> dist = isValid.lift(id, lat, lon, alt, time, (cond, pId, p1, p2, p3, t) -> {
-                    if (cond) {
+                Cell<Double> dist = isValid.lift(id, lat, lon, alt, time, (valid, pId, p1, p2, p3, t) -> {
+                    if (valid) {
                         Position currentPosition = new Position(p1, p2, p3, t);
 
                         double distance;
@@ -364,10 +396,9 @@ public class GuiOutline {
                             timePassed = t - lastPosition.time;
                             totalTimeRecord.put(pId, totalTimeRecord.getOrDefault(pId, 0L) + timePassed);
 
-                            // Only record each 60 seconds total distance
-                            // TODO: notice, currently use 5 sec for test
-                            if (totalTimeRecord.getOrDefault(pId, 0L) >= 60000) {
-                                totalTimeRecord.put(pId, totalTimeRecord.get(pId) - 60000); // reset cumulative time
+                            // Record the distance only when each defined interval is reached
+                            if (totalTimeRecord.getOrDefault(pId, 0L) >= windowSizeMillis) {
+                                totalTimeRecord.put(pId, totalTimeRecord.get(pId) - windowSizeMillis); // reset cumulative time
                                 timeBasedTotalDistRecord.put(pId, totalDistancesRecord.getOrDefault(pId, 0.0));
                             }
                         }
@@ -386,7 +417,7 @@ public class GuiOutline {
                 Cell<String> fTime = time.lift(isValid, (l, r) -> r ? formatTime(l) : "");
                 Cell<String> fDist = dist.lift(isValid, (l, r) -> r ? String.valueOf(l) : ""); // TODO: notice ensure put dist in
 
-                // Add GUI elements in
+                // Add GUI elements to correspond panel
                 SLabel filterId = new SLabel(fId);
                 SLabel filterLat = new SLabel(fLat);
                 SLabel filterLon = new SLabel(fLon);

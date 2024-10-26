@@ -1,8 +1,3 @@
-import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
-
 /**
  * Helper class to print tracker element
  */
@@ -30,9 +25,6 @@ public class GpsData {
     }
 
     private String formatTime(long time) {
-        DateTimeFormatter TIME_FORMATTER = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss");
-        Instant instant = Instant.ofEpochMilli(time);
-        LocalDateTime localDateTime = LocalDateTime.ofInstant(instant, ZoneId.systemDefault());
-        return localDateTime.format(TIME_FORMATTER);
+        return GuiOutline.formatTime(time);
     }
 }

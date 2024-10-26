@@ -1,19 +1,19 @@
 import java.util.Objects;
 
 /**
- * Helper class to hold latitude, longitude, and altitude
+ * Helper class to calculate tracker travelled distance
  */
 public class Position {
-    final double latitude;
-    final double longitude;
-    final double altitude;
-    final Long time;
+    public final double latitude;
+    public final double longitude;
+    public final double altitude;
+    public final Long time;
 
-    Position(double latitude, double longitude, double altitude) {
+    public Position(double latitude, double longitude, double altitude) {
         this(latitude, longitude, altitude, System.currentTimeMillis());
     }
 
-    Position(double latitude, double longitude, double altitude, Long time) {
+    public Position(double latitude, double longitude, double altitude, Long time) {
         this.latitude = latitude;
         this.longitude = longitude;
         this.altitude = altitude;
