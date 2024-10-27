@@ -17,13 +17,17 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-public class GuiOutline {
+public class GpsGUI {
     private final JFrame frame = new JFrame("GPS Tracking Application");
     private final Stream<GpsEvent>[] gpsEvents;
+    // Receive user inputs
+    private final List<Cell<Optional<Double>>> rangeVals = new ArrayList<>();
     // provide the time interval when calculate distance
     private final long windowSizeMillis = 30000; // It could be modified when testing
+    // Set the update restriction button
+    private SButton setButton = new SButton("");
 
-    public GuiOutline(Stream<GpsEvent>[] gpsEvents) {
+    public GpsGUI(Stream<GpsEvent>[] gpsEvents) {
         this.gpsEvents = gpsEvents;
         initializeComponents();
     }
@@ -118,6 +122,72 @@ public class GuiOutline {
         });
     }
 
+    public static List<List<Cell<String>>> simplifiedTrackers(Stream<GpsEvent>[] gpsEvents) {
+        List<Cell<String>> trackerIds = new ArrayList<>();
+        List<Cell<String>> latitudes = new ArrayList<>();
+        List<Cell<String>> longitudes = new ArrayList<>();
+
+        for (Stream<GpsEvent> evStream : gpsEvents) {
+            trackerIds.add(evStream.map(ev -> ev.name).hold(""));
+            latitudes.add(evStream.map(ev -> String.valueOf(ev.latitude)).hold(""));
+            longitudes.add(evStream.map(ev -> String.valueOf(ev.longitude)).hold(""));
+        }
+
+        List<List<Cell<String>>> cells = new ArrayList<>();
+        cells.add(trackerIds);
+        cells.add(latitudes);
+        cells.add(longitudes);
+
+        return cells;
+    }
+
+    public static Cell<String> currentTracker(Stream<GpsEvent>[] gpsEvents) {
+        return Transaction.run(() -> {
+            // Set up the system time stream and hold the latest time in a cell
+            StreamSink<Long> sysTimeStream = new StreamSink<>();
+            ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+            scheduler.scheduleAtFixedRate(() -> {
+                long currentTime = System.currentTimeMillis();
+                sysTimeStream.send(currentTime); // Push current system time into the stream
+            }, 0, 1, TimeUnit.SECONDS);
+
+            Cell<Long> sysTimeValue = sysTimeStream.hold(System.currentTimeMillis());
+
+            // Merge all incoming events as the current event stream
+            Stream<GpsEvent> lastGpsStream = gpsEvents[0];
+            for (int i = 1; i < gpsEvents.length; i++) {
+                lastGpsStream = lastGpsStream.orElse(gpsEvents[i]);
+            }
+
+            // Record data from the current event and wrap it with a timestamp
+            CellLoop<GpsData> currData = new CellLoop<>();
+            TimerSystem<Long> timerSystem = new MillisecondsTimerSystem();
+            Cell<Long> timer = timerSystem.time;
+
+            Stream<GpsData> sWrapTime = lastGpsStream.snapshot(timer, (ev, t) ->
+                    new GpsData(ev.name, String.valueOf(ev.latitude), String.valueOf(ev.longitude), t));
+            Stream<GpsData> sSetNew = sWrapTime.snapshot(currData, (ev, c) -> !ev.equals(c) ? ev : null);
+
+            currData.loop(sSetNew.filter(Objects::nonNull).hold(new GpsData("", "", "", 0L)));
+
+            // Clean event if the data has not been updated within 3 seconds
+            return sysTimeValue.lift(currData, (sysTime, data) ->
+                    (sysTime - data.time > 3000) ? "" : data.toString());
+        });
+    }
+
+    public static void main(String[] args) {
+        // Initialize the GPS Service
+        GpsService gpsService = new GpsService();
+
+        // Retrieve the event streams from GpsService
+        Stream<GpsEvent>[] gpsStreams = gpsService.getEventStreams();
+
+        // Display the GUI
+        GpsGUI gui = new GpsGUI(gpsStreams);
+        gui.show();
+    }
+
     // GUI initialization: combine all panels to the window
     private void initializeComponents() {
         // Set up the main frame
@@ -132,7 +202,7 @@ public class GuiOutline {
         allTrackerSplitPane.setResizeWeight(0.8);
 
         // Right-side GUI: Single Display(2) --
-        JPanel filteredTrackerDisplayPanel = FilteredTrackerDisplayPanel("Filtered Tracker Display", gpsEvents);
+        JPanel filteredTrackerDisplayPanel = FilteredTrackerDisplayPanel("Filtered Tracker Display");
 
         // Place the main panels side by side
         JPanel mainPanel = new JPanel(new GridBagLayout());
@@ -162,25 +232,6 @@ public class GuiOutline {
         List<List<Cell<String>>> simplyInfo = simplifiedTrackers(gpsEvents);
 
         return simplifyDisplayGUI(title, simplyInfo);
-    }
-
-    public static List<List<Cell<String>>> simplifiedTrackers(Stream<GpsEvent>[] gpsEvents) {
-        List<Cell<String>> trackerIds = new ArrayList<>();
-        List<Cell<String>> latitudes = new ArrayList<>();
-        List<Cell<String>> longitudes = new ArrayList<>();
-
-        for (Stream<GpsEvent> evStream : gpsEvents) {
-            trackerIds.add(evStream.map(ev -> ev.name).hold(""));
-            latitudes.add(evStream.map(ev -> String.valueOf(ev.latitude)).hold(""));
-            longitudes.add(evStream.map(ev -> String.valueOf(ev.longitude)).hold(""));
-        }
-
-        List<List<Cell<String>>> cells = new ArrayList<>();
-        cells.add(trackerIds);
-        cells.add(latitudes);
-        cells.add(longitudes);
-
-        return cells;
     }
 
     private JPanel simplifyDisplayGUI(String title, List<List<Cell<String>>> cells) {
@@ -225,41 +276,6 @@ public class GuiOutline {
         return panel;
     }
 
-    public static Cell<String> currentTracker(Stream<GpsEvent>[] gpsEvents) {
-        return Transaction.run(() -> {
-            // Set up the system time stream and hold the latest time in a cell
-            StreamSink<Long> sysTimeStream = new StreamSink<>();
-            ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
-            scheduler.scheduleAtFixedRate(() -> {
-                long currentTime = System.currentTimeMillis();
-                sysTimeStream.send(currentTime); // Push current system time into the stream
-            }, 0, 1, TimeUnit.SECONDS);
-
-            Cell<Long> sysTimeValue = sysTimeStream.hold(System.currentTimeMillis());
-
-            // Merge all incoming events as the current event stream
-            Stream<GpsEvent> lastGpsStream = gpsEvents[0];
-            for (int i = 1; i < gpsEvents.length; i++) {
-                lastGpsStream = lastGpsStream.orElse(gpsEvents[i]);
-            }
-
-            // Record data from the current event and wrap it with a timestamp
-            CellLoop<GpsData> currData = new CellLoop<>();
-            TimerSystem<Long> timerSystem = new MillisecondsTimerSystem();
-            Cell<Long> timer = timerSystem.time;
-
-            Stream<GpsData> sWrapTime = lastGpsStream.snapshot(timer, (ev, t) ->
-                    new GpsData(ev.name, String.valueOf(ev.latitude), String.valueOf(ev.longitude), t));
-            Stream<GpsData> sSetNew = sWrapTime.snapshot(currData, (ev, c) -> !ev.equals(c) ? ev : null);
-
-            currData.loop(sSetNew.filter(Objects::nonNull).hold(new GpsData("", "", "", 0L)));
-
-            // Clean event if the data has not been updated within 3 seconds
-            return sysTimeValue.lift(currData, (sysTime, data) ->
-                    (sysTime - data.time > 3000) ? "" : data.toString());
-        });
-    }
-
     private JPanel currTrackerGUI(String title) {
         JPanel panel = new JPanel(new GridLayout(1, 1, 5, 5));
         panel.setBorder(BorderFactory.createTitledBorder(title));
@@ -267,23 +283,28 @@ public class GuiOutline {
     }
 
     /* Single Display (2) -- Include setting button, input textFields and filtered tracker displays */
-    public JPanel FilteredTrackerDisplayPanel(String title, Stream<GpsEvent>[] gpsEvents) {
-        /* Setting GUI **/
+    public JPanel FilteredTrackerDisplayPanel(String title) {
+        JSplitPane controlPanel = ControlPanel();
+
+        JPanel inputPanel = InputPanel(title);
+
         JPanel mainPanel = new JPanel(new BorderLayout());
 
-        // Create inputPanel
-        JPanel inputPanel = new JPanel(new GridLayout(gpsEvents.length + 1, 5, 5, 5));
-        inputPanel.setBorder(BorderFactory.createTitledBorder(title));
-        inputPanel.add(new JLabel("ID"));
-        inputPanel.add(new JLabel("Latitude"));
-        inputPanel.add(new JLabel("Longitude"));
-        inputPanel.add(new JLabel("Time"));
-        inputPanel.add(new JLabel("Distance"));
+        // Create JSplitPane with InputPanel and ControlPanel
+        JSplitPane vertSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, inputPanel, controlPanel);
+        vertSplitPane.setResizeWeight(0.8);
 
-        // Create controlPanel
+        // Add the split pane to the main panel
+        mainPanel.add(vertSplitPane, BorderLayout.CENTER);
+
+        return mainPanel;
+    }
+
+    private JSplitPane ControlPanel() {
+        // Create ControlPanel
         JSplitPane controlPanel;
 
-        // Left sub-controlPanel for text fields with labels and setting button
+        // Left sub-ControlPanel for text fields with labels and setting button
         JPanel leftPanel = new JPanel(new GridBagLayout());
         GridBagConstraints gbcLeft = new GridBagConstraints();
         gbcLeft.insets = new Insets(10, 10, 10, 10);
@@ -322,7 +343,6 @@ public class GuiOutline {
         }
 
         // Prepare setting button click-available condition
-        List<Cell<Optional<Double>>> rangeVals = new ArrayList<>();
         rangeVals.add(convertInputs(textFields.get(0), -90, 90));
         rangeVals.add(convertInputs(textFields.get(1), -90, 90));
         rangeVals.add(convertInputs(textFields.get(2), -180, 180));
@@ -344,14 +364,14 @@ public class GuiOutline {
         allValid = allValid.lift(minMaxValid, rangeValid, (a, b, c) -> a && b && c); // combine all conditions together
 
         // Setting Button
-        SButton setButton = new SButton("Set", allValid); // only all input valid can click the button
+        setButton = new SButton("Set", allValid); // only all input valid can click the button
         gbcLeft.gridx = 0;
         gbcLeft.gridy = textFields.size();
         gbcLeft.gridwidth = 2;
         gbcLeft.anchor = GridBagConstraints.SOUTH;
         leftPanel.add(setButton, gbcLeft);
 
-        // Right sub-controlPanel for result label
+        // Right sub-ControlPanel for result label
         JPanel rightPanel = new JPanel(new GridBagLayout());
         GridBagConstraints gbcRight = new GridBagConstraints();
         gbcRight.insets = new Insets(5, 5, 5, 5);
@@ -373,6 +393,19 @@ public class GuiOutline {
         controlPanel.setDividerLocation(500);
         controlPanel.setResizeWeight(0.5);
         controlPanel.setBorder(BorderFactory.createTitledBorder("Restrict Dimension"));
+
+        return controlPanel;
+    }
+
+    private JPanel InputPanel(String title) {
+        // Create InputPanel
+        JPanel inputPanel = new JPanel(new GridLayout(gpsEvents.length + 1, 5, 5, 5));
+        inputPanel.setBorder(BorderFactory.createTitledBorder(title));
+        inputPanel.add(new JLabel("ID"));
+        inputPanel.add(new JLabel("Latitude"));
+        inputPanel.add(new JLabel("Longitude"));
+        inputPanel.add(new JLabel("Time"));
+        inputPanel.add(new JLabel("Distance"));
 
         /* Core Event-Drive Logic Begin **/
         // Provide a cell to acquire time when event fired
@@ -467,29 +500,11 @@ public class GuiOutline {
             }
         });
 
-        // Create JSplitPane with inputPanel and controlPanel
-        JSplitPane vertSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, inputPanel, controlPanel);
-        vertSplitPane.setResizeWeight(0.8);
-        // Add the split pane to the main panel
-        mainPanel.add(vertSplitPane, BorderLayout.CENTER);
-
-        return mainPanel;
+        return inputPanel;
     }
 
     public void show() {
         frame.setVisible(true);
-    }
-
-    public static void main(String[] args) {
-        // Initialize the GPS Service
-        GpsService gpsService = new GpsService();
-
-        // Retrieve the event streams from GpsService
-        Stream<GpsEvent>[] gpsStreams = gpsService.getEventStreams();
-
-        // Display the GUI
-        GuiOutline gui = new GuiOutline(gpsStreams);
-        gui.show();
     }
 
 }
