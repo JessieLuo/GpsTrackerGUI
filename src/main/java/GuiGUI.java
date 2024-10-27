@@ -159,9 +159,9 @@ public class GuiOutline {
 
     /* Single Display (1) -- Part I Ten simplifier tracker  */
     public JPanel TrackerDisplayPanel(String title, Stream<GpsEvent>[] gpsEvents) {
-        List<List<Cell<String>>> frpCells = simplifiedTrackers(gpsEvents);
+        List<List<Cell<String>>> simplyInfo = simplifiedTrackers(gpsEvents);
 
-        return simplifyDisplayGUI(title, frpCells);
+        return simplifyDisplayGUI(title, simplyInfo);
     }
 
     public static List<List<Cell<String>>> simplifiedTrackers(Stream<GpsEvent>[] gpsEvents) {
@@ -211,47 +211,58 @@ public class GuiOutline {
 
     /* Single Display (1) -- Part II Current Event coming in */
     public JPanel CurrentTrackerPanel(String title, Stream<GpsEvent>[] gpsEvents) {
-        JPanel panel = new JPanel(new GridLayout(1, 1, 5, 5));
-        panel.setBorder(BorderFactory.createTitledBorder(title));
+        JPanel panel = currTrackerGUI(title);
 
         Transaction.runVoid(() -> {
-            // Capture system time
-            TimerSystem<Long> timerSystem = new MillisecondsTimerSystem();
-            Cell<Long> timer = timerSystem.time;
-            // continuously emits the system time every second.
+            // Step 2: Set up the FRP logic and get the content cell
+            Cell<String> content = currentTracker(gpsEvents);
+
+            // Step 3: Bind the content cell to an SLabel and add it to the panel
+            SLabel currentEventTexts = new SLabel(content);
+            panel.add(currentEventTexts);
+        });
+
+        return panel;
+    }
+
+    public static Cell<String> currentTracker(Stream<GpsEvent>[] gpsEvents) {
+        return Transaction.run(() -> {
+            // Set up the system time stream and hold the latest time in a cell
             StreamSink<Long> sysTimeStream = new StreamSink<>();
             ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
             scheduler.scheduleAtFixedRate(() -> {
                 long currentTime = System.currentTimeMillis();
                 sysTimeStream.send(currentTime); // Push current system time into the stream
             }, 0, 1, TimeUnit.SECONDS);
-            // Hold the latest system time in a cell
+
             Cell<Long> sysTimeValue = sysTimeStream.hold(System.currentTimeMillis());
 
-            /* merge all coming in events as current event to show on GUI */
+            // Merge all incoming events as the current event stream
             Stream<GpsEvent> lastGpsStream = gpsEvents[0];
             for (int i = 1; i < gpsEvents.length; i++) {
                 lastGpsStream = lastGpsStream.orElse(gpsEvents[i]);
             }
 
-            // Record data from current event
+            // Record data from the current event and wrap it with a timestamp
             CellLoop<GpsData> currData = new CellLoop<>();
+            TimerSystem<Long> timerSystem = new MillisecondsTimerSystem();
+            Cell<Long> timer = timerSystem.time;
 
-            Stream<GpsData> sWrapTime = lastGpsStream.snapshot(timer, (ev, t)
-                    -> new GpsData(ev.name, String.valueOf(ev.latitude), String.valueOf(ev.longitude), t));
+            Stream<GpsData> sWrapTime = lastGpsStream.snapshot(timer, (ev, t) ->
+                    new GpsData(ev.name, String.valueOf(ev.latitude), String.valueOf(ev.longitude), t));
             Stream<GpsData> sSetNew = sWrapTime.snapshot(currData, (ev, c) -> !ev.equals(c) ? ev : null);
 
             currData.loop(sSetNew.filter(Objects::nonNull).hold(new GpsData("", "", "", 0L)));
 
-            /* Clean event if its data not update over 3 seconds */
-            Cell<String> content = sysTimeValue.lift(currData, (sysTime, data)
-                    -> (sysTime - data.time > 3000) ? "" : data).map(Object::toString);
-
-            SLabel currentEventTexts = new SLabel(content);
-
-            panel.add(currentEventTexts);
+            // Clean event if the data has not been updated within 3 seconds
+            return sysTimeValue.lift(currData, (sysTime, data) ->
+                    (sysTime - data.time > 3000) ? "" : data.toString());
         });
+    }
 
+    private JPanel currTrackerGUI(String title) {
+        JPanel panel = new JPanel(new GridLayout(1, 1, 5, 5));
+        panel.setBorder(BorderFactory.createTitledBorder(title));
         return panel;
     }
 
@@ -469,7 +480,16 @@ public class GuiOutline {
         frame.setVisible(true);
     }
 
-    public boolean isFrameVisible() {
-        return frame.isVisible();
+    public static void main(String[] args) {
+        // Initialize the GPS Service
+        GpsService gpsService = new GpsService();
+
+        // Retrieve the event streams from GpsService
+        Stream<GpsEvent>[] gpsStreams = gpsService.getEventStreams();
+
+        // Display the GUI
+        GuiOutline gui = new GuiOutline(gpsStreams);
+        gui.show();
     }
+
 }
