@@ -185,7 +185,7 @@ public class GpsGUI {
      * Filter event: if current event not met condition, all info would be empty
      */
     public static List<Cell<String>> filteredEvents(List<Cell<Optional<Double>>> inputVals, SButton setButton, long windowSizeMillis, Stream<GpsEvent> gpsEvent) {
-        // TODO: When test the method, it method associated with control panel logic to know what is the input and when it updated
+        // TODO: When test the method, it should associated with control panel logic to know what is the input and when it updated
         TimerSystem<Long> timerSystem = new MillisecondsTimerSystem();
         Cell<Long> timer = timerSystem.time;
         // Only update the restriction when click button
