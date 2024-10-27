@@ -18,17 +18,22 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 public class GpsGUI {
+    // Record events for specific tracker
+    private static final Map<String, Position> positionsRecord = new HashMap<>(); // separate each tracker with it current position info
+    private static final Map<String, Double> totalDistancesRecord = new HashMap<>(); // store each tracker travelled distance
+    private static final Map<String, Long> totalTimeRecord = new HashMap<>(); // record current event fired time
+    private static final Map<String, Double> timeBasedTotalDistRecord = new HashMap<>(); // record the distance only events cumulative pass time equal to intervals
+    // Set the update restriction button
+    private static SButton setButton = new SButton("");
     private final JFrame frame = new JFrame("GPS Tracking Application");
     private final Stream<GpsEvent>[] gpsEvents;
+    private final int eventCount;
     // Receive user inputs
     private final List<Cell<Optional<Double>>> rangeVals = new ArrayList<>();
-    // provide the time interval when calculate distance
-    private final long windowSizeMillis = 30000; // It could be modified when testing
-    // Set the update restriction button
-    private SButton setButton = new SButton("");
 
     public GpsGUI(Stream<GpsEvent>[] gpsEvents) {
         this.gpsEvents = gpsEvents;
+        this.eventCount = gpsEvents.length;
         initializeComponents();
     }
 
@@ -176,6 +181,90 @@ public class GpsGUI {
         });
     }
 
+    /**
+     * Filter event: if current event not met condition, all info would be empty
+     */
+    public static List<Cell<String>> filteredEvents(List<Cell<Optional<Double>>> inputVals, SButton setButton, long windowSizeMillis, Stream<GpsEvent> gpsEvent) {
+        // TODO: When test the method, it method associated with control panel logic to know what is the input and when it updated
+        TimerSystem<Long> timerSystem = new MillisecondsTimerSystem();
+        Cell<Long> timer = timerSystem.time;
+        // Only update the restriction when click button
+        Cell<Optional<Double>> latMaxAfterClick = setButton.sClicked
+                .snapshot(inputVals.get(0), (u, r) -> r).hold(Optional.empty());
+        Cell<Optional<Double>> latMinAfterClick = setButton.sClicked
+                .snapshot(inputVals.get(1), (u, r) -> r).hold(Optional.empty());
+        Cell<Optional<Double>> lonMaxAfterClick = setButton.sClicked
+                .snapshot(inputVals.get(2), (u, r) -> r).hold(Optional.empty());
+        Cell<Optional<Double>> lonMinAfterClick = setButton.sClicked
+                .snapshot(inputVals.get(3), (u, r) -> r).hold(Optional.empty());
+
+        List<Cell<String>> filterResults = new ArrayList<>();
+
+        // Extract value
+        Cell<String> id = gpsEvent.map(ev -> ev.name).hold("");
+        Cell<Double> lat = gpsEvent.map(ev -> ev.latitude).hold(0.0);
+        Cell<Double> lon = gpsEvent.map(ev -> ev.longitude).hold(0.0);
+        Cell<Double> alt = gpsEvent.map(ev -> ev.altitude * 0.3048).hold(0.0); // convert feet to meter
+        Cell<Long> time = gpsEvent.snapshot(timer).hold(0L); // event occurs time
+
+        // Start filtering
+        Cell<Boolean> isValid = new Cell<>(true);
+        Cell<Boolean> latValid = lat.lift(latMaxAfterClick, latMinAfterClick, (evLat, max, min)
+                -> max.isPresent() && min.isPresent() && evLat < max.get() && evLat > min.get());
+        Cell<Boolean> lonValid = lon.lift(lonMaxAfterClick, lonMinAfterClick, (evLon, max, min)
+                -> max.isPresent() && min.isPresent() && evLon < max.get() && evLon > min.get());
+        isValid = isValid.lift(latValid, lonValid, (a, b, c) -> a && b && c);
+
+        // calculate distance
+        Cell<Double> dist = isValid.lift(id, lat, lon, alt, time, (valid, pId, p1, p2, p3, t) -> {
+            if (valid) {
+                Position currentPosition = new Position(p1, p2, p3, t);
+
+                double distance;
+
+                Long timePassed;
+
+                // If current ID exist, add dist to previous
+                if (positionsRecord.containsKey(pId)) {
+                    Position lastPosition = positionsRecord.get(pId);
+                    distance = calculateDistance(lastPosition, currentPosition);
+
+                    // Record each two position distance for the same id
+                    totalDistancesRecord.put(pId, totalDistancesRecord.getOrDefault(pId, 0.0) + distance);
+
+                    timePassed = t - lastPosition.time;
+                    totalTimeRecord.put(pId, totalTimeRecord.getOrDefault(pId, 0L) + timePassed);
+
+                    // Record the distance only when each defined interval is reached
+                    if (totalTimeRecord.getOrDefault(pId, 0L) >= windowSizeMillis) {
+                        totalTimeRecord.put(pId, totalTimeRecord.get(pId) - windowSizeMillis); // reset cumulative time
+                        timeBasedTotalDistRecord.put(pId, totalDistancesRecord.getOrDefault(pId, 0.0));
+                    }
+                }
+
+                positionsRecord.put(pId, currentPosition);
+
+                return timeBasedTotalDistRecord.getOrDefault(pId, 0.0);
+            }
+            return 0.0; // If an event not met condition, its distance should always 0 that it never track
+        });
+
+        // Define filtered output value
+        Cell<String> fId = id.lift(isValid, (l, r) -> r ? l : "");
+        Cell<String> fLat = lat.lift(isValid, (l, r) -> r ? String.valueOf(l) : "");
+        Cell<String> fLon = lon.lift(isValid, (l, r) -> r ? String.valueOf(l) : "");
+        Cell<String> fTime = time.lift(isValid, (l, r) -> r ? formatTime(l) : "");
+        Cell<String> fDist = dist.lift(isValid, (l, r) -> r ? String.valueOf(l) : "");
+
+        filterResults.add(fId);
+        filterResults.add(fLat);
+        filterResults.add(fLon);
+        filterResults.add(fTime);
+        filterResults.add(fDist);
+
+        return filterResults;
+    }
+
     public static void main(String[] args) {
         // Initialize the GPS Service
         GpsService gpsService = new GpsService();
@@ -195,13 +284,13 @@ public class GpsGUI {
         frame.setSize(1200, 800);
 
         // Left-side GUI: Single Display(1) -- Ten simplified Trackers & Single Entry with Time
-        JPanel allTrackerDisplayPanel = TrackerDisplayPanel("All Tracker Display", gpsEvents);
-        JPanel currentTrackerPanel = CurrentTrackerPanel("Current Tracker Display", gpsEvents);
+        JPanel simplifyTrackersDisplayPanel = SimplifyDisplayPanel("All Tracker Display");
+        JPanel currentTrackerPanel = CurrentTrackerPanel("Current Tracker Display");
         // Combine the display(1)
-        JSplitPane allTrackerSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, allTrackerDisplayPanel, currentTrackerPanel);
-        allTrackerSplitPane.setResizeWeight(0.8);
+        JSplitPane TrackerSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, simplifyTrackersDisplayPanel, currentTrackerPanel);
+        TrackerSplitPane.setResizeWeight(0.8);
 
-        // Right-side GUI: Single Display(2) --
+        // Right-side GUI: Single Display(2) -- Define Range and show result & Display filtered tracker with distance
         JPanel filteredTrackerDisplayPanel = FilteredTrackerDisplayPanel("Filtered Tracker Display");
 
         // Place the main panels side by side
@@ -214,7 +303,7 @@ public class GpsGUI {
         gbc.weightx = 0.4;
         gbc.weighty = 1.0;
         gbc.fill = GridBagConstraints.BOTH;
-        mainPanel.add(allTrackerSplitPane, gbc);
+        mainPanel.add(TrackerSplitPane, gbc);
 
         // Add the right component
         gbc.gridx = 1;
@@ -228,13 +317,13 @@ public class GpsGUI {
     }
 
     /* Single Display (1) -- Part I Ten simplifier tracker  */
-    public JPanel TrackerDisplayPanel(String title, Stream<GpsEvent>[] gpsEvents) {
+    public JPanel SimplifyDisplayPanel(String title) {
         List<List<Cell<String>>> simplyInfo = simplifiedTrackers(gpsEvents);
 
-        return simplifyDisplayGUI(title, simplyInfo);
+        return SimplifyDisplayGUI(title, simplyInfo);
     }
 
-    private JPanel simplifyDisplayGUI(String title, List<List<Cell<String>>> cells) {
+    private JPanel SimplifyDisplayGUI(String title, List<List<Cell<String>>> cells) {
         int columnCount = 3; // Columns: Tracker ID, Latitude, Longitude
         int rowCount = cells.get(0).size();
 
@@ -261,8 +350,8 @@ public class GpsGUI {
     }
 
     /* Single Display (1) -- Part II Current Event coming in */
-    public JPanel CurrentTrackerPanel(String title, Stream<GpsEvent>[] gpsEvents) {
-        JPanel panel = currTrackerGUI(title);
+    public JPanel CurrentTrackerPanel(String title) {
+        JPanel panel = CurrTrackerGUI(title);
 
         Transaction.runVoid(() -> {
             // Step 2: Set up the FRP logic and get the content cell
@@ -276,22 +365,22 @@ public class GpsGUI {
         return panel;
     }
 
-    private JPanel currTrackerGUI(String title) {
+    private JPanel CurrTrackerGUI(String title) {
         JPanel panel = new JPanel(new GridLayout(1, 1, 5, 5));
         panel.setBorder(BorderFactory.createTitledBorder(title));
         return panel;
     }
 
-    /* Single Display (2) -- Include setting button, input textFields and filtered tracker displays */
+    /* Single Display (2) */
     public JPanel FilteredTrackerDisplayPanel(String title) {
         JSplitPane controlPanel = ControlPanel();
 
-        JPanel inputPanel = InputPanel(title);
+        JPanel fEventDisplayPanel = FilterEvDisplayPanel(title);
 
         JPanel mainPanel = new JPanel(new BorderLayout());
 
-        // Create JSplitPane with InputPanel and ControlPanel
-        JSplitPane vertSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, inputPanel, controlPanel);
+        // Create JSplitPane with FilterEvDisplayPanel and ControlPanel
+        JSplitPane vertSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, fEventDisplayPanel, controlPanel);
         vertSplitPane.setResizeWeight(0.8);
 
         // Add the split pane to the main panel
@@ -300,6 +389,7 @@ public class GpsGUI {
         return mainPanel;
     }
 
+    /* Single Display (2) -- Part I user input textFiles, result label and set button */
     private JSplitPane ControlPanel() {
         // Create ControlPanel
         JSplitPane controlPanel;
@@ -342,7 +432,7 @@ public class GpsGUI {
             leftPanel.add(textFields.get(i), gbcLeft);
         }
 
-        // Prepare setting button click-available condition
+        // Store user input values
         rangeVals.add(convertInputs(textFields.get(0), -90, 90));
         rangeVals.add(convertInputs(textFields.get(1), -90, 90));
         rangeVals.add(convertInputs(textFields.get(2), -180, 180));
@@ -397,110 +487,46 @@ public class GpsGUI {
         return controlPanel;
     }
 
-    private JPanel InputPanel(String title) {
-        // Create InputPanel
-        JPanel inputPanel = new JPanel(new GridLayout(gpsEvents.length + 1, 5, 5, 5));
-        inputPanel.setBorder(BorderFactory.createTitledBorder(title));
-        inputPanel.add(new JLabel("ID"));
-        inputPanel.add(new JLabel("Latitude"));
-        inputPanel.add(new JLabel("Longitude"));
-        inputPanel.add(new JLabel("Time"));
-        inputPanel.add(new JLabel("Distance"));
+    /* Single Display (2) -- Part II show filtered trackers' info: id, lat, lon, time, distance (each 5-min update) */
+    private JPanel FilterEvDisplayPanel(String title) {
+        // Create FilterEvDisplayPanel
+        JPanel displayPanel = FilterEvDisplayGUI(title);
 
-        /* Core Event-Drive Logic Begin **/
-        // Provide a cell to acquire time when event fired
-        Transaction.runVoid(() -> {
-            TimerSystem<Long> timerSystem = new MillisecondsTimerSystem();
-            Cell<Long> timer = timerSystem.time;
-            // Only update the restriction when click button
-            Cell<Optional<Double>> latMaxAfterClick = setButton.sClicked
-                    .snapshot(rangeVals.get(0), (u, r) -> r).hold(Optional.empty());
-            Cell<Optional<Double>> latMinAfterClick = setButton.sClicked
-                    .snapshot(rangeVals.get(1), (u, r) -> r).hold(Optional.empty());
-            Cell<Optional<Double>> lonMaxAfterClick = setButton.sClicked
-                    .snapshot(rangeVals.get(2), (u, r) -> r).hold(Optional.empty());
-            Cell<Optional<Double>> lonMinAfterClick = setButton.sClicked
-                    .snapshot(rangeVals.get(3), (u, r) -> r).hold(Optional.empty());
+        // Dynamically output result on GUI
+        for (Stream<GpsEvent> gpsEvent : gpsEvents) {
+            // provide the time interval when calculate distance
+            long windowSizeMillis = 30000; // It could be modified when testing
 
-            // Record events for specific tracker
-            Map<String, Position> positionsRecord = new HashMap<>(); // separate each tracker with it current position info
-            Map<String, Double> totalDistancesRecord = new HashMap<>(); // store each tracker travelled distance
-            Map<String, Long> totalTimeRecord = new HashMap<>(); // record current event fired time
-            Map<String, Double> timeBasedTotalDistRecord = new HashMap<>(); // record the distance only events cumulative pass time equal to intervals
+            /* Core event-drive logic */
+            List<Cell<String>> results = filteredEvents(rangeVals, setButton, windowSizeMillis, gpsEvent);
 
-            for (Stream<GpsEvent> gpsEvent : gpsEvents) {
-                // Extract value
-                Cell<String> id = gpsEvent.map(ev -> ev.name).hold("");
-                Cell<Double> lat = gpsEvent.map(ev -> ev.latitude).hold(0.0);
-                Cell<Double> lon = gpsEvent.map(ev -> ev.longitude).hold(0.0);
-                Cell<Double> alt = gpsEvent.map(ev -> ev.altitude * 0.3048).hold(0.0); // convert feet to meter
-                Cell<Long> time = gpsEvent.snapshot(timer).hold(0L); // event occurs time
+            // Add GUI elements to correspond panel
+            SLabel filterId = new SLabel(results.get(0));
+            SLabel filterLat = new SLabel(results.get(1));
+            SLabel filterLon = new SLabel(results.get(2));
+            SLabel filterTime = new SLabel(results.get(3));
+            SLabel filterDist = new SLabel(results.get(4));
 
-                // Start filtering
-                Cell<Boolean> isValid = new Cell<>(true);
-                Cell<Boolean> latValid = lat.lift(latMaxAfterClick, latMinAfterClick, (evLat, max, min)
-                        -> max.isPresent() && min.isPresent() && evLat < max.get() && evLat > min.get());
-                Cell<Boolean> lonValid = lon.lift(lonMaxAfterClick, lonMinAfterClick, (evLon, max, min)
-                        -> max.isPresent() && min.isPresent() && evLon < max.get() && evLon > min.get());
-                isValid = isValid.lift(latValid, lonValid, (a, b, c) -> a && b && c);
+            displayPanel.add(filterId);
+            displayPanel.add(filterLat);
+            displayPanel.add(filterLon);
+            displayPanel.add(filterTime);
+            displayPanel.add(filterDist);
+        }
 
-                // calculate distance
-                Cell<Double> dist = isValid.lift(id, lat, lon, alt, time, (valid, pId, p1, p2, p3, t) -> {
-                    if (valid) {
-                        Position currentPosition = new Position(p1, p2, p3, t);
+        return displayPanel;
+    }
 
-                        double distance;
+    private JPanel FilterEvDisplayGUI(String title) {
+        JPanel displayPanel = new JPanel(new GridLayout(eventCount + 1, 5, 5, 5));
+        displayPanel.setBorder(BorderFactory.createTitledBorder(title));
+        displayPanel.add(new JLabel("ID"));
+        displayPanel.add(new JLabel("Latitude"));
+        displayPanel.add(new JLabel("Longitude"));
+        displayPanel.add(new JLabel("Time"));
+        displayPanel.add(new JLabel("Distance"));
 
-                        Long timePassed;
-
-                        // If current ID exist, add dist to previous
-                        if (positionsRecord.containsKey(pId)) {
-                            Position lastPosition = positionsRecord.get(pId);
-                            distance = calculateDistance(lastPosition, currentPosition);
-
-                            // Record each two position distance for the same id
-                            totalDistancesRecord.put(pId, totalDistancesRecord.getOrDefault(pId, 0.0) + distance);
-
-                            timePassed = t - lastPosition.time;
-                            totalTimeRecord.put(pId, totalTimeRecord.getOrDefault(pId, 0L) + timePassed);
-
-                            // Record the distance only when each defined interval is reached
-                            if (totalTimeRecord.getOrDefault(pId, 0L) >= windowSizeMillis) {
-                                totalTimeRecord.put(pId, totalTimeRecord.get(pId) - windowSizeMillis); // reset cumulative time
-                                timeBasedTotalDistRecord.put(pId, totalDistancesRecord.getOrDefault(pId, 0.0));
-                            }
-                        }
-
-                        positionsRecord.put(pId, currentPosition);
-
-                        return timeBasedTotalDistRecord.getOrDefault(pId, 0.0);
-                    }
-                    return 0.0;
-                });
-
-                // Define output value
-                Cell<String> fId = id.lift(isValid, (l, r) -> r ? l : "");
-                Cell<String> fLat = lat.lift(isValid, (l, r) -> r ? String.valueOf(l) : "");
-                Cell<String> fLon = lon.lift(isValid, (l, r) -> r ? String.valueOf(l) : "");
-                Cell<String> fTime = time.lift(isValid, (l, r) -> r ? formatTime(l) : "");
-                Cell<String> fDist = dist.lift(isValid, (l, r) -> r ? String.valueOf(l) : ""); // TODO: notice ensure put dist in
-
-                // Add GUI elements to correspond panel
-                SLabel filterId = new SLabel(fId);
-                SLabel filterLat = new SLabel(fLat);
-                SLabel filterLon = new SLabel(fLon);
-                SLabel filterTime = new SLabel(fTime);
-                SLabel filterDist = new SLabel(fDist);
-
-                inputPanel.add(filterId);
-                inputPanel.add(filterLat);
-                inputPanel.add(filterLon);
-                inputPanel.add(filterTime);
-                inputPanel.add(filterDist);
-            }
-        });
-
-        return inputPanel;
+        return displayPanel;
     }
 
     public void show() {
