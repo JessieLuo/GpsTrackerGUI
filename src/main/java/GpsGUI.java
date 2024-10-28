@@ -17,6 +17,11 @@ public class GpsGUI {
     private final Stream<GpsEvent>[] gpsEvents;
     private final List<Cell<Optional<Double>>> rangeVals = new ArrayList<>(); // Receive user inputs
     private final int eventCount; // define tracker display panel rows
+    // user input fields
+    private final STextField latMax = new STextField("", 15);
+    private final STextField latMin = new STextField("", 15);
+    private final STextField lonMax = new STextField("", 15);
+    private final STextField lonMin = new STextField("", 15);
 
     public GpsGUI(Stream<GpsEvent>[] gpsEvents) {
         this.gpsEvents = gpsEvents;
@@ -24,7 +29,9 @@ public class GpsGUI {
         initializeComponents();
     }
 
-    /** Main Class to start the app **/
+    /**
+     * Main Class to start the app
+     **/
     public static void main(String[] args) {
         // Initialize the GPS Service
         GpsService gpsService = new GpsService();
@@ -78,7 +85,7 @@ public class GpsGUI {
 
     /* Single Display (1) GUI -- Part I Ten simplifier tracker */
     public JPanel SimplifyDisplayPanel(String title) {
-        java.util.List<java.util.List<Cell<String>>> simplyInfo = EventProcessor.simplifiedTrackers(gpsEvents);
+        List<List<Cell<String>>> simplyInfo = EventProcessor.simplifiedTrackers(gpsEvents);
 
         return SimplifyDisplayGUI(title, simplyInfo);
     }
@@ -141,7 +148,7 @@ public class GpsGUI {
 
         JPanel mainPanel = new JPanel(new BorderLayout());
 
-        // Create JSplitPane with FilterEvDisplayPanel and controlguiwithpanel
+        // Create JSplitPane with FilterEvDisplayPanel and ControlGuiWithPanel
         JSplitPane vertSplitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, fEventDisplayPanel, controlPanel);
         vertSplitPane.setResizeWeight(0.8);
 
@@ -153,77 +160,91 @@ public class GpsGUI {
 
     /* Single Display (2) GUI -- Part I user input textFiles, result label and set button */
     private JSplitPane ControlGuiWithPanel() {
-        // Create controlguiwithpanel
+        // Create ControlGuiWithPanel main outline
         JSplitPane controlPanel;
 
-        // Left sub-controlguiwithpanel for text fields with labels and setting button
+        JPanel leftPanel = ControlLeftPanel();
+        JPanel rightPanel = ControlRightPanel();
+
+        // Combine left-sub and right-sub to control panel (includes input with labels, button, and result)
+        controlPanel = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, leftPanel, rightPanel);
+        controlPanel.setDividerLocation(500);
+        controlPanel.setResizeWeight(0.5);
+        controlPanel.setBorder(BorderFactory.createTitledBorder("Restrict value range"));
+
+        return controlPanel;
+    }
+
+    // Helper method to create the left panel
+    private JPanel ControlLeftPanel() {
         JPanel leftPanel = new JPanel(new GridBagLayout());
         GridBagConstraints gbcLeft = new GridBagConstraints();
         gbcLeft.insets = new Insets(10, 10, 10, 10);
         gbcLeft.fill = GridBagConstraints.HORIZONTAL;
 
-        // Input text labels
-        java.util.List<JLabel> fieldLabels = new ArrayList<>();
-        fieldLabels.add(new JLabel("LatitudeMax(-90, 90)"));
-        fieldLabels.add(new JLabel("LatitudeMin(-90, 90)"));
-        fieldLabels.add(new JLabel("LongitudeMax(-180, 180)"));
-        fieldLabels.add(new JLabel("LongitudeMin(-180, 180)"));
+        // Define labels for each text field
+        JLabel[] fieldLabels = {
+                new JLabel("LatitudeMax(-90, 90)"),
+                new JLabel("LatitudeMin(-90, 90)"),
+                new JLabel("LongitudeMax(-180, 180)"),
+                new JLabel("LongitudeMin(-180, 180)")
+        };
 
-        // Input text fields
-        java.util.List<STextField> textFields = new ArrayList<>();
-        // Use the elements frequently, so retain the variables
-        STextField latMax = new STextField("", 15);
-        STextField latMin = new STextField("", 15);
-        STextField lonMax = new STextField("", 15);
-        STextField lonMin = new STextField("", 15);
-        textFields.add(latMax);
-        textFields.add(latMin);
-        textFields.add(lonMax);
-        textFields.add(lonMin);
-        // add textFields and labels to sub-leftPanel
-        for (int i = 0; i < textFields.size(); i++) {
-            // Add label on the left side of the text field
+        // Define the individual text fields to be used in each row
+        STextField[] textFieldsArray = {latMax, latMin, lonMax, lonMin};
+
+        // Add labels and individual text fields to the panel
+        for (int i = 0; i < textFieldsArray.length; i++) {
             gbcLeft.gridx = 0;
             gbcLeft.gridy = i;
             gbcLeft.anchor = GridBagConstraints.EAST;
-            leftPanel.add(fieldLabels.get(i), gbcLeft);
+            leftPanel.add(fieldLabels[i], gbcLeft);
 
-            // Add text field
             gbcLeft.gridx = 1;
             gbcLeft.anchor = GridBagConstraints.WEST;
-            leftPanel.add(textFields.get(i), gbcLeft);
+            leftPanel.add(textFieldsArray[i], gbcLeft);
+
+            // Store user input values with appropriate ranges directly in rangeVals
+            if (i < 2) {
+                rangeVals.add(Utils.convertInputs(textFieldsArray[i], -90, 90)); // Latitude fields
+            } else {
+                rangeVals.add(Utils.convertInputs(textFieldsArray[i], -180, 180)); // Longitude fields
+            }
         }
 
-        // Store user input values
-        rangeVals.add(Utils.convertInputs(textFields.get(0), -90, 90));
-        rangeVals.add(Utils.convertInputs(textFields.get(1), -90, 90));
-        rangeVals.add(Utils.convertInputs(textFields.get(2), -180, 180));
-        rangeVals.add(Utils.convertInputs(textFields.get(3), -180, 180));
-
-        // Ensure all inputs value are valid
-        Cell<Boolean> allValid = new Cell<>(true);
-        for (Cell<Optional<Double>> rangeVal : rangeVals) {
-            Cell<Boolean> noEmptyValid = rangeVal.map(Optional::isPresent); // ensure no empty
-            allValid = allValid.lift(noEmptyValid, (a, b) -> a && b);
-        }
-        Cell<Boolean> minMaxValid = rangeVals.get(0).lift(rangeVals.get(1), rangeVals.get(2), rangeVals.get(3), (a, b, c, d) ->
-                a.isPresent() && b.isPresent() && c.isPresent() && d.isPresent() &&
-                        a.get() > b.get() && c.get() > d.get()); // Ensure max value greater min
-        Cell<Boolean> rangeValid = rangeVals.get(0).lift(rangeVals.get(1), rangeVals.get(2), rangeVals.get(3), (a, b, c, d) ->
-                a.isPresent() && b.isPresent() && c.isPresent() && d.isPresent() &&
-                        a.get() >= -90 && b.get() <= 90 && c.get() >= -180 && d.get() <= 180);
-
-        allValid = allValid.lift(minMaxValid, rangeValid, (a, b, c) -> a && b && c); // combine all conditions together
-
-        // Setting Button
-        setButton = new SButton("Set", allValid); // only all input valid can click the button
+        // Add setting button, configured with validation
+        setButton = new SButton("Set", inputValid());
         gbcLeft.gridx = 0;
-        gbcLeft.gridy = textFields.size();
+        gbcLeft.gridy = textFieldsArray.length;
         gbcLeft.gridwidth = 2;
         gbcLeft.anchor = GridBagConstraints.SOUTH;
         leftPanel.add(setButton, gbcLeft);
 
-        // Right sub-controlguiwithpanel for result label
+        return leftPanel;
+    }
+
+    // Validate inputs
+    private Cell<Boolean> inputValid() {
+        Cell<Boolean> allValid = new Cell<>(true);
+        for (Cell<Optional<Double>> rangeVal : rangeVals) {
+            Cell<Boolean> noEmptyValid = rangeVal.map(Optional::isPresent);
+            allValid = allValid.lift(noEmptyValid, (a, b) -> a && b);
+        }
+        Cell<Boolean> minMaxValid = rangeVals.get(0).lift(rangeVals.get(1), rangeVals.get(2), rangeVals.get(3), (a, b, c, d) ->
+                a.isPresent() && b.isPresent() && c.isPresent() && d.isPresent() &&
+                        a.get() > b.get() && c.get() > d.get());
+        Cell<Boolean> rangeValid = rangeVals.get(0).lift(rangeVals.get(1), rangeVals.get(2), rangeVals.get(3), (a, b, c, d) ->
+                a.isPresent() && b.isPresent() && c.isPresent() && d.isPresent() &&
+                        a.get() >= -90 && b.get() <= 90 && c.get() >= -180 && d.get() <= 180);
+
+        // only all input values valid, the button can be clicked
+        allValid = allValid.lift(minMaxValid, rangeValid, (a, b, c) -> a && b && c);
+
+        return allValid;
+    }
+
+    // Helper method to create the right panel
+    private JPanel ControlRightPanel() {
         JPanel rightPanel = new JPanel(new GridBagLayout());
         GridBagConstraints gbcRight = new GridBagConstraints();
         gbcRight.insets = new Insets(5, 5, 5, 5);
@@ -231,8 +252,8 @@ public class GpsGUI {
 
         // Add result label
         Stream<String> storeResult = setButton.sClicked
-                .snapshot(latMin.text.lift(latMax.text, lonMin.text, lonMax.text, (a, b, c, d)
-                        -> String.format("Latitude(" + a + ", " + b + ")" + " Longitude(" + c + ", " + d + ")")));
+                .snapshot(latMin.text.lift(latMax.text, lonMin.text, lonMax.text, (a, b, c, d) ->
+                        String.format("Latitude(%s, %s) Longitude(%s, %s)", a, b, c, d)));
         Cell<String> result = storeResult.hold("Input must: numeric(include -); max > min");
         SLabel resultLabel = new SLabel(result);
         gbcRight.gridx = 0;
@@ -240,13 +261,7 @@ public class GpsGUI {
         gbcRight.anchor = GridBagConstraints.CENTER;
         rightPanel.add(resultLabel, gbcRight);
 
-        // Combine left-sub and right-sub to control panel (include input with labels, button and result)
-        controlPanel = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, leftPanel, rightPanel);
-        controlPanel.setDividerLocation(500);
-        controlPanel.setResizeWeight(0.5);
-        controlPanel.setBorder(BorderFactory.createTitledBorder("Restrict Dimension"));
-
-        return controlPanel;
+        return rightPanel;
     }
 
     /* Single Display (2) GUI -- Part II show filtered trackers' info: id, lat, lon, time, distance (each 5-min update) */
