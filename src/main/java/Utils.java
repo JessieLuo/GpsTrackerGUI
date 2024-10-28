@@ -7,6 +7,19 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 
+/**
+ * Utility class containing helper methods for GPS-related calculations and data formatting.
+ * <p>
+ * This class includes:
+ * <ul>
+ *     <li>Methods to safely parse and validate user input for numerical ranges.</li>
+ *     <li>Geographic distance calculation using the Haversine formula for horizontal distance and
+ *     Pythagorean theorem for 3D distance incorporating altitude.</li>
+ *     <li>A utility to format timestamps in a human-readable time format.</li>
+ * </ul>
+ * These methods assist in processing GPS data by ensuring validated inputs, calculating precise
+ * distances between positions, and displaying formatted times.
+ */
 public class Utils {
     // Format time as H:M:S
     public static String formatTime(long time) {

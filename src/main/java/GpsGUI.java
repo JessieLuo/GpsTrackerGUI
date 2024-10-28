@@ -11,12 +11,28 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * GpsGUI is the graphical user interface for displaying real-time GPS tracking data across multiple trackers. <br><br>
+ * <p>
+ * This GUI includes:
+ * <ul>
+ *   <li><b>Tracker Display:</b> A simplified view showing each tracker's ID, latitude, and longitude, with altitude data removed. This view automatically updates with new GPS events.</li>
+ *   <li><b>Current Event Display:</b> Displays the most recent GPS event as a single entry showing ID, latitude, longitude, and timestamp, and clears automatically if not updated within 3 seconds.</li>
+ *   <li><b>Filtered Events Display:</b> Shows only events within a specified latitude and longitude range, set by the user. For each tracker, cumulative distance traveled within the last 5 minutes is displayed.</li>
+ *   <li><b>Control Panel:</b> Allows users to define latitude and longitude restrictions. Includes input fields for setting maximum and minimum latitude and longitude values, and a button to apply the settings. The panel also shows the current range settings for visual reference.</li>
+ * </ul>
+ * <p>
+ * This class leverages Sodium FRP and custom widgets (swidgets) to manage the interactive elements, user
+ * input, and live updates based on GPS event data.
+ */
 public class GpsGUI {
     private static SButton setButton = new SButton(""); // Set the update restriction button
     private final JFrame frame = new JFrame("GPS Tracking Application"); // The main frame include all panels
     private final Stream<GpsEvent>[] gpsEvents;
     private final List<Cell<Optional<Double>>> rangeVals = new ArrayList<>(); // Receive user inputs
     private final int eventCount; // define tracker display panel rows
+    @SuppressWarnings("FieldCanBeLocal")
+    private final long windowSizeMillis = 30000; // It could be modified when testing
     // user input fields
     private final STextField latMax = new STextField("", 15);
     private final STextField latMin = new STextField("", 15);
@@ -83,7 +99,14 @@ public class GpsGUI {
         frame.add(mainPanel, BorderLayout.CENTER);
     }
 
-    /* Single Display (1) GUI -- Part I Ten simplifier tracker */
+    /**
+     * Single Display (1) GUI -- Part I Ten simplifier tracker
+     * <p>
+     * Displays a simplified view of trackers, showing only the ID, latitude, and longitude of each tracker.
+     *
+     * @param title Panel title for the tracker display
+     * @return JPanel containing tracker display information
+     */
     public JPanel SimplifyDisplayPanel(String title) {
         List<List<Cell<String>>> simplyInfo = EventProcessor.simplifiedTrackers(gpsEvents);
 
@@ -117,7 +140,12 @@ public class GpsGUI {
         return panel;
     }
 
-    /* Single Display (1) GUI -- Part II Current Event coming in */
+    /**
+     * Single Display (1) GUI -- Part II Current Event coming in
+     *
+     * @param title Panel title for the current tracker display
+     * @return showing current event details
+     */
     public JPanel CurrentTrackerPanel(String title) {
         JPanel panel = CurrTrackerGUI(title);
 
@@ -140,7 +168,14 @@ public class GpsGUI {
         return panel;
     }
 
-    /* Single Display (2) GUI -- Combine user input and filtered events display */
+    /**
+     * Single Display (2)
+     * <p>
+     * Combines the filtered tracker display with user-defined input controls for setting latitude and longitude ranges.
+     *
+     * @param title Panel title for the filtered tracker display
+     * @return JPanel containing filtered tracker display with control input settings
+     */
     public JPanel FilteredTrackerDisplayPanel(String title) {
         JSplitPane controlPanel = ControlGuiWithPanel();
 
@@ -271,9 +306,6 @@ public class GpsGUI {
 
         // Dynamically output result on GUI
         for (Stream<GpsEvent> gpsEvent : gpsEvents) {
-            // provide the time interval when calculate distance
-            long windowSizeMillis = 30000; // It could be modified when testing
-
             /* Core event-drive logic */
             List<Cell<String>> results = EventProcessor.filteredEvents(rangeVals, setButton, windowSizeMillis, gpsEvent);
 

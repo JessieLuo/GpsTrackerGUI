@@ -3,12 +3,38 @@ import nz.sodium.time.MillisecondsTimerSystem;
 import nz.sodium.time.TimerSystem;
 import swidgets.SButton;
 
-import java.util.List;
 import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * EventProcessor is a utility class for handling and processing GPS event data with Sodium FRP primitives.
+ * It is designed to support a GPS tracking GUI application by filtering, recording, and calculating distance
+ * data for multiple trackers in real time. <br><br>
+ * <p>
+ * This class provides essential functionalities to meet the following requirements:
+ * <ul>
+ *   <li><b>Simplified Tracker Information:</b> Processes incoming GPS streams for multiple trackers, removing
+ *       altitude data to provide only tracker ID, latitude, and longitude. This simplified information is displayed
+ *       in individual cells for each tracker.</li>
+ *   <li><b>Current Event Tracking:</b> Maintains and displays a single, most recent GPS event for each tracker
+ *       as a comma-delimited string (ID, latitude, longitude, time) when received. This display clears automatically
+ *       after 3 seconds of inactivity.</li>
+ *   <li><b>GPS Event Filtering:</b> Filters GPS events based on user-defined latitude and longitude range inputs,
+ *       managed through an interactive control panel. This uses the Sodium FRP <code>snapshot</code> primitive to
+ *       capture events within the specified geographic range and dynamically displays data in a format identical
+ *       to the current event display.</li>
+ *   <li><b>Distance Calculation:</b> Tracks and calculates the total distance traveled by each tracker over a
+ *       5-minute sliding time window. The calculation includes only GPS events that fall within the active latitude
+ *       and longitude range. Altitude is converted from feet to meters for accurate 3D distance measurement.
+ *       Distance is rounded to the nearest integer and displayed in meters.</li>
+ * </ul>
+ * <p>
+ * The EventProcessor class maintains various tracker-specific records, such as position, cumulative distance,
+ * and elapsed time since the last recorded event. These records support the dynamic and accurate representation
+ * of GPS tracking data over time.
+ */
 public class EventProcessor {
     // Record events for specific tracker
     private static final Map<String, Position> positionsRecord = new HashMap<>(); // separate each tracker with it current position info
@@ -19,10 +45,12 @@ public class EventProcessor {
     private static final double FEET_TO_METER = 0.3048; // convert altitude from feet to meter
 
     /**
-     * Process simplified tracker information that without altitude
+     * Processes simplified tracking information by excluding altitude data, returning only the
+     * essential tracker information for display purposes.
      *
-     * @param gpsEvents All the event carrying Gps data
-     * @return A list of tracker info, include list of id, list of lat and list of lon
+     * @param gpsEvents Array of streams, each representing a continuous flow of GPS events for individual trackers.
+     * @return A list containing tracker details where each list entry corresponds to a cell of information:
+     * list of IDs, list of latitudes, and list of longitudes.
      */
     public static List<List<Cell<String>>> simplifiedTrackers(Stream<GpsEvent>[] gpsEvents) {
         List<Cell<String>> trackerIds = new ArrayList<>();
@@ -44,10 +72,12 @@ public class EventProcessor {
     }
 
     /**
-     * Process current event and clean after 3 sec if not be overwritten
+     * Processes and maintains the latest GPS event data for display, refreshing as new events arrive.
+     * The current event data is cleared automatically if no new events arrive within a 3-second window.
      *
-     * @param gpsEvents All the event carrying Gps data
-     * @return Current fired event information: A string of [id, lat, lon, time], or empty string if exceed time
+     * @param gpsEvents Array of streams, each representing continuous GPS event data for individual trackers.
+     * @return A cell containing the latest event information as a formatted string "[id, lat, lon, time]".
+     * If no events occur within the 3-second interval, the cell returns an empty string.
      */
     public static Cell<String> currentTracker(Stream<GpsEvent>[] gpsEvents) {
         return Transaction.run(() -> {
@@ -85,13 +115,22 @@ public class EventProcessor {
     }
 
     /**
-     * Process to filter event: if current event not met condition, all info would be empty
+     * Filters GPS events based on user-defined latitude and longitude restrictions. When an event falls within the defined
+     * range, the event details are processed and displayed. If an event does not meet the conditions, all displayed values
+     * for that event are empty. Distance is calculated for each tracker within the specified time window only for
+     * events that meet the restrictions.
      *
-     * @param inputVals        User input restriction range values: maximum latitude, minimum latitude; maximum longitude, minimum longitude
-     * @param setButton        The button could set the range value
-     * @param windowSizeMillis Define the distance calculation time interval
-     * @param gpsEvent         Current event carrying Gps data
-     * @return A list that stored filtered events information: [id, lat, lon, time, dist]
+     * <p>The latitude and longitude range can be set through user input fields for maximum and minimum values, and
+     * clicking the `setButton` applies these restrictions. Only events within the specified range are displayed, and
+     * the cumulative distance for each tracker is updated accordingly.</p>
+     *
+     * @param inputVals        List of user-defined latitude and longitude range values: maximum and minimum latitude,
+     *                         maximum and minimum longitude.
+     * @param setButton        Button to apply the restriction range values defined in `inputVals`.
+     * @param windowSizeMillis Time interval (in milliseconds) used to calculate cumulative distance.
+     * @param gpsEvent         Current GPS event data stream.
+     * @return List of `Cell<String>` containing event information, where each entry corresponds to [id, lat, lon, time, dist].
+     * If an event does not meet the conditions, the entries are empty strings.
      */
     public static List<Cell<String>> filteredEvents(List<Cell<Optional<Double>>> inputVals, SButton setButton, long windowSizeMillis, Stream<GpsEvent> gpsEvent) {
         TimerSystem<Long> timerSystem = new MillisecondsTimerSystem();
