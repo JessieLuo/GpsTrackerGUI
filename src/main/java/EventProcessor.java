@@ -17,7 +17,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-public class GpsGUI {
+public class EventProcessor {
     // Record events for specific tracker
     private static final Map<String, Position> positionsRecord = new HashMap<>(); // separate each tracker with it current position info
     private static final Map<String, Double> totalDistancesRecord = new HashMap<>(); // store each tracker travelled distance
@@ -32,7 +32,7 @@ public class GpsGUI {
     // Receive user inputs
     private final List<Cell<Optional<Double>>> rangeVals = new ArrayList<>();
 
-    public GpsGUI(Stream<GpsEvent>[] gpsEvents) {
+    public EventProcessor(Stream<GpsEvent>[] gpsEvents) {
         this.gpsEvents = gpsEvents;
         this.eventCount = gpsEvents.length;
         initializeComponents();
@@ -291,7 +291,7 @@ public class GpsGUI {
         Stream<GpsEvent>[] gpsStreams = gpsService.getEventStreams();
 
         // Display the GUI
-        GpsGUI gui = new GpsGUI(gpsStreams);
+        EventProcessor gui = new EventProcessor(gpsStreams);
         gui.show();
     }
 

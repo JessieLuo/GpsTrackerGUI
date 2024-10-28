@@ -24,7 +24,7 @@ public class GpsFilterEventRange_Test {
         StreamSink<GpsEvent> gpsStream = new StreamSink<>();
 
         // Call filteredEvents with the setButton and gpsStream
-        List<Cell<String>> filteredCells = GpsGUI.filteredEvents(rangeVals, setButton, 5000L, gpsStream);
+        List<Cell<String>> filteredCells = EventProcessor.filteredEvents(rangeVals, setButton, 5000L, gpsStream);
 
         // Simulate button click to apply the ranges
         simulateButtonClick(setButton);
@@ -43,7 +43,7 @@ public class GpsFilterEventRange_Test {
 
         SButton setButton = new SButton("Set");
         StreamSink<GpsEvent> gpsStream = new StreamSink<>();
-        List<Cell<String>> filteredCells = GpsGUI.filteredEvents(rangeVals, setButton, 5000L, gpsStream);
+        List<Cell<String>> filteredCells = EventProcessor.filteredEvents(rangeVals, setButton, 5000L, gpsStream);
 
         simulateButtonClick(setButton);
 
@@ -60,7 +60,7 @@ public class GpsFilterEventRange_Test {
 
         SButton setButton = new SButton("Set");
         StreamSink<GpsEvent> gpsStream = new StreamSink<>();
-        List<Cell<String>> filteredCells = GpsGUI.filteredEvents(rangeVals, setButton, 5000L, gpsStream);
+        List<Cell<String>> filteredCells = EventProcessor.filteredEvents(rangeVals, setButton, 5000L, gpsStream);
 
         simulateButtonClick(setButton);
 

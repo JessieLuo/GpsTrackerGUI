@@ -20,7 +20,7 @@ public class GpsFilterEventDist_Test {
         SButton setButton = new SButton("Set");
         StreamSink<GpsEvent> gpsStream = new StreamSink<>();
         // Simulate filter events
-        GpsGUI.filteredEvents(rangeVals, setButton, 5000L, gpsStream);
+        EventProcessor.filteredEvents(rangeVals, setButton, 5000L, gpsStream);
 
         simulateButtonClick(setButton);
 
@@ -31,13 +31,13 @@ public class GpsFilterEventDist_Test {
         GpsEvent event4 = new GpsEvent("Test1Tracker1", 10.0, 98.6, 110.0);
 
         // Define the actual travelled distance value for each tracker
-        double tracker1Dist1 = GpsGUI.calculateDistance(
+        double tracker1Dist1 = EventProcessor.calculateDistance(
                 new Position(event1.latitude, event1.longitude, event1.altitude),
                 new Position(event2.latitude, event2.longitude, event2.altitude));
-        double tracker1Dist2 = GpsGUI.calculateDistance(
+        double tracker1Dist2 = EventProcessor.calculateDistance(
                 new Position(event2.latitude, event2.longitude, event2.altitude),
                 new Position(event3.latitude, event3.longitude, event3.altitude));
-        double tracker2Dist3 = GpsGUI.calculateDistance(
+        double tracker2Dist3 = EventProcessor.calculateDistance(
                 new Position(event3.latitude, event3.longitude, event3.altitude),
                 new Position(event4.latitude, event4.longitude, event4.altitude));
         double tracker1ExpectDist = tracker1Dist1 + tracker1Dist2 + tracker2Dist3;
@@ -53,7 +53,7 @@ public class GpsFilterEventDist_Test {
         Thread.sleep(100);
 
         // Ensure when tracker arrive position 4 from 1, all the distance has been cumulative
-        assertEquals(tracker1ExpectDist, GpsGUI.getTotalDistancesRecord().get("Test1Tracker1"), 0.1);
+        assertEquals(tracker1ExpectDist, EventProcessor.getTotalDistancesRecord().get("Test1Tracker1"), 0.1);
     }
 
     @Test
@@ -63,7 +63,7 @@ public class GpsFilterEventDist_Test {
         SButton setButton = new SButton("Set");
         StreamSink<GpsEvent> gpsStream = new StreamSink<>();
         // Simulate filter events
-        GpsGUI.filteredEvents(rangeVals, setButton, 5000L, gpsStream);
+        EventProcessor.filteredEvents(rangeVals, setButton, 5000L, gpsStream);
 
         simulateButtonClick(setButton);
 
@@ -75,10 +75,10 @@ public class GpsFilterEventDist_Test {
         GpsEvent event5 = new GpsEvent("Test2Tracker1", 8.5, 98.45, 102.0);
 
         // Define the actual travelled distance value for each tracker
-        double tracker1ExpectDist = GpsGUI.calculateDistance(
+        double tracker1ExpectDist = EventProcessor.calculateDistance(
                 new Position(event1.latitude, event1.longitude, event1.altitude),
                 new Position(event5.latitude, event5.longitude, event5.altitude));
-        double tracker2ExpectDist = GpsGUI.calculateDistance(
+        double tracker2ExpectDist = EventProcessor.calculateDistance(
                 new Position(event2.latitude, event2.longitude, event2.altitude),
                 new Position(event4.latitude, event4.longitude, event4.altitude));
         double tracker3ExpectDist = 0.0; // tracker3 no next position
@@ -91,16 +91,16 @@ public class GpsFilterEventDist_Test {
         gpsStream.send(event5);
 
         // Ensure all the cumulative distance value correspond to its tracker exactly
-        assertEquals(tracker1ExpectDist, GpsGUI.getTotalDistancesRecord().get("Test2Tracker1"), 0.0001);
-        assertEquals(tracker2ExpectDist, GpsGUI.getTotalDistancesRecord().get("Test2Tracker2"), 0.0001);
-        assertEquals(tracker3ExpectDist, GpsGUI.getTotalDistancesRecord().get("Test2Tracker3"), 0.0001);
+        assertEquals(tracker1ExpectDist, EventProcessor.getTotalDistancesRecord().get("Test2Tracker1"), 0.0001);
+        assertEquals(tracker2ExpectDist, EventProcessor.getTotalDistancesRecord().get("Test2Tracker2"), 0.0001);
+        assertEquals(tracker3ExpectDist, EventProcessor.getTotalDistancesRecord().get("Test2Tracker3"), 0.0001);
 
         // Ensure that positions from Tracker 2 are not used in distance calculations with Tracker 1
-        double mistakeTracker1Dist = GpsGUI.calculateDistance(
+        double mistakeTracker1Dist = EventProcessor.calculateDistance(
                 new Position(event1.latitude, event1.longitude, event1.altitude),
                 new Position(event2.latitude, event2.longitude, event2.altitude));
 
-        assertNotEquals(mistakeTracker1Dist, GpsGUI.getTotalDistancesRecord().get("Test2Tracker1"), 0.0001);
+        assertNotEquals(mistakeTracker1Dist, EventProcessor.getTotalDistancesRecord().get("Test2Tracker1"), 0.0001);
     }
 
     /* Test filter events distance */
@@ -111,7 +111,7 @@ public class GpsFilterEventDist_Test {
         SButton setButton = new SButton("Set");
         StreamSink<GpsEvent> gpsStream = new StreamSink<>();
         // Simulate filter events
-        GpsGUI.filteredEvents(rangeVals, setButton, 5000L, gpsStream);
+        EventProcessor.filteredEvents(rangeVals, setButton, 5000L, gpsStream);
 
         simulateButtonClick(setButton);
 
@@ -123,10 +123,10 @@ public class GpsFilterEventDist_Test {
         GpsEvent event5 = new GpsEvent("Test3Tracker1", 8.5, 98.45, 102.0);
 
         // Define the actual travelled distance value for each tracker
-        double tracker1Dist1 = GpsGUI.calculateDistance(
+        double tracker1Dist1 = EventProcessor.calculateDistance(
                 new Position(event2.latitude, event2.longitude, event2.altitude),
                 new Position(event4.latitude, event4.longitude, event4.altitude));
-        double tracker1Dist2 = GpsGUI.calculateDistance(
+        double tracker1Dist2 = EventProcessor.calculateDistance(
                 new Position(event4.latitude, event4.longitude, event4.altitude),
                 new Position(event5.latitude, event5.longitude, event5.altitude));
         double tracker1ExpectDist = tracker1Dist1 + tracker1Dist2;
@@ -139,14 +139,14 @@ public class GpsFilterEventDist_Test {
         gpsStream.send(event5);
 
         // Ensure all the cumulative distance value correspond to its tracker exactly
-        assertEquals(tracker1ExpectDist, GpsGUI.getTotalDistancesRecord().get("Test3Tracker1"), 0.1);
+        assertEquals(tracker1ExpectDist, EventProcessor.getTotalDistancesRecord().get("Test3Tracker1"), 0.1);
 
         // For example, add an event as correct position but actually the event is not
-        double mistakeTracker1Dist = GpsGUI.calculateDistance(
+        double mistakeTracker1Dist = EventProcessor.calculateDistance(
                 new Position(event1.latitude, event1.longitude, event1.altitude),
                 new Position(event2.latitude, event2.longitude, event2.altitude))
                 + tracker1Dist1 + tracker1Dist2;
-        assertNotEquals(mistakeTracker1Dist, GpsGUI.getTotalDistancesRecord().get("Test3Tracker1"), 0.1);
+        assertNotEquals(mistakeTracker1Dist, EventProcessor.getTotalDistancesRecord().get("Test3Tracker1"), 0.1);
     }
 
     // Helper method to simulate user input range values

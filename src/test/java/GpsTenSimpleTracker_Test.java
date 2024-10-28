@@ -13,7 +13,7 @@ public class GpsTenSimpleTracker_Test {
         @SuppressWarnings("unchecked")
         Stream<GpsEvent>[] gpsEvents = new Stream[0];
 
-        List<List<Cell<String>>> frpCells = GpsGUI.simplifiedTrackers(gpsEvents);
+        List<List<Cell<String>>> frpCells = EventProcessor.simplifiedTrackers(gpsEvents);
 
         // Since there are no trackers, so expect empty lists for each attribute
         assertEquals(0, frpCells.get(0).size());
@@ -27,7 +27,7 @@ public class GpsTenSimpleTracker_Test {
         @SuppressWarnings("unchecked")
         Stream<GpsEvent>[] gpsEvents = new Stream[]{gpsEvent1};
 
-        List<List<Cell<String>>> frpCells = GpsGUI.simplifiedTrackers(gpsEvents);
+        List<List<Cell<String>>> frpCells = EventProcessor.simplifiedTrackers(gpsEvents);
 
         gpsEvent1.send(new GpsEvent("tracker1", 34.05, -118.25, 100)); // Altitude excluded
 
@@ -47,7 +47,7 @@ public class GpsTenSimpleTracker_Test {
         @SuppressWarnings("unchecked")
         Stream<GpsEvent>[] gpsEvents = new Stream[]{gpsEvent1, gpsEvent2};
 
-        List<List<Cell<String>>> frpCells = GpsGUI.simplifiedTrackers(gpsEvents);
+        List<List<Cell<String>>> frpCells = EventProcessor.simplifiedTrackers(gpsEvents);
 
         // Send more than 1 events
         gpsEvent1.send(new GpsEvent("tracker1", 34.05, -118.25, 44.5));
@@ -70,7 +70,7 @@ public class GpsTenSimpleTracker_Test {
         @SuppressWarnings("unchecked")
         Stream<GpsEvent>[] gpsEvents = new Stream[]{gpsEvent1};
 
-        List<List<Cell<String>>> frpCells = GpsGUI.simplifiedTrackers(gpsEvents);
+        List<List<Cell<String>>> frpCells = EventProcessor.simplifiedTrackers(gpsEvents);
 
         gpsEvent1.send(new GpsEvent("tracker1", 34.05, -118.25, 100)); // Altitude excluded
 

@@ -17,7 +17,7 @@ public class GpsCurrEventClean_Test {
         Stream<GpsEvent>[] gpsEvents = new Stream[]{gpsEvent1};
 
         // get the current event content
-        Cell<String> content = GpsGUI.currentTracker(gpsEvents);
+        Cell<String> content = EventProcessor.currentTracker(gpsEvents);
 
         // Simulate sending an event
         GpsEvent event = new GpsEvent("ContentTestTracker1", 34.05, -118.25, 100);
@@ -39,7 +39,7 @@ public class GpsCurrEventClean_Test {
         @SuppressWarnings("unchecked")
         Stream<GpsEvent>[] gpsEvents = new Stream[]{gpsEvent1};
 
-        Cell<String> content = GpsGUI.currentTracker(gpsEvents);
+        Cell<String> content = EventProcessor.currentTracker(gpsEvents);
 
         GpsEvent firstEvent = new GpsEvent("Tracker1", 34.05, -118.25, 100);
         gpsEvent1.send(firstEvent);
