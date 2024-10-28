@@ -1,5 +1,6 @@
 import nz.sodium.Stream;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 import swidgets.SButton;
 import swidgets.STextField;
@@ -10,6 +11,15 @@ import static org.junit.Assert.*;
 
 public class GpsGUI_Test {
     private GpsGUI gui;
+
+    @BeforeClass
+    public static void setUpHeadlessIfNeeded() {
+        // Check if we're running on Linux without a display, and set headless mode only if necessary
+        String os = System.getProperty("os.name").toLowerCase();
+        if (os.contains("linux") && !java.awt.GraphicsEnvironment.isHeadless()) {
+            System.setProperty("java.awt.headless", "true");
+        }
+    }
 
     @Before
     public void setUp() {
