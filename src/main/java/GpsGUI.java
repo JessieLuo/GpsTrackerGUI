@@ -31,7 +31,7 @@ public class GpsGUI {
 
     /**
      * Main Class to start the app
-     **/
+     */
     public static void main(String[] args) {
         // Initialize the GPS Service
         GpsService gpsService = new GpsService();
