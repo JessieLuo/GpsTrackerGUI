@@ -23,6 +23,7 @@ public class GpsGUI {
     private static final Map<String, Double> totalDistancesRecord = new HashMap<>(); // store each tracker travelled distance
     private static final Map<String, Long> totalTimeRecord = new HashMap<>(); // record current event fired time
     private static final Map<String, Double> timeBasedTotalDistRecord = new HashMap<>(); // record the distance only events cumulative pass time equal to intervals
+    private static final double FEET_TO_METER = 0.3048; // convert altitude from feet to meter
     // Set the update restriction button
     private static SButton setButton = new SButton("");
     private final JFrame frame = new JFrame("GPS Tracking Application");
@@ -107,7 +108,7 @@ public class GpsGUI {
         return 6371000.0 * c;
     }
 
-    // Safely convert input string to double value
+    // Safely convert user input to double value
     private static Cell<Optional<Double>> convertInputs(STextField textField, double min, double max) {
         return textField.text.map(t -> {
             t = t.trim();
@@ -127,6 +128,12 @@ public class GpsGUI {
         });
     }
 
+    /**
+     * Process simplified tracker information that without altitude
+     *
+     * @param gpsEvents All the event carrying Gps data
+     * @return A list of tracker info, include list of id, list of lat and list of lon
+     */
     public static List<List<Cell<String>>> simplifiedTrackers(Stream<GpsEvent>[] gpsEvents) {
         List<Cell<String>> trackerIds = new ArrayList<>();
         List<Cell<String>> latitudes = new ArrayList<>();
@@ -146,6 +153,12 @@ public class GpsGUI {
         return cells;
     }
 
+    /**
+     * Process current event and clean after 3 sec if not be overwritten
+     *
+     * @param gpsEvents All the event carrying Gps data
+     * @return Current fired event information: A string of [id, lat, lon, time], or empty string if exceed time
+     */
     public static Cell<String> currentTracker(Stream<GpsEvent>[] gpsEvents) {
         return Transaction.run(() -> {
             // Set up the system time stream and hold the latest time in a cell
@@ -182,10 +195,15 @@ public class GpsGUI {
     }
 
     /**
-     * Filter event: if current event not met condition, all info would be empty
+     * Process to filter event: if current event not met condition, all info would be empty
+     *
+     * @param inputVals        User input restriction range values: maximum latitude, minimum latitude; maximum longitude, minimum longitude
+     * @param setButton        The button could set the range value
+     * @param windowSizeMillis Define the distance calculation time interval
+     * @param gpsEvent         Current event carrying Gps data
+     * @return A list that stored filtered events information: [id, lat, lon, time, dist]
      */
     public static List<Cell<String>> filteredEvents(List<Cell<Optional<Double>>> inputVals, SButton setButton, long windowSizeMillis, Stream<GpsEvent> gpsEvent) {
-        // TODO: When test the method, it should associated with control panel logic to know what is the input and when it updated
         TimerSystem<Long> timerSystem = new MillisecondsTimerSystem();
         Cell<Long> timer = timerSystem.time;
         // Only update the restriction when click button
@@ -204,15 +222,15 @@ public class GpsGUI {
         Cell<String> id = gpsEvent.map(ev -> ev.name).hold("");
         Cell<Double> lat = gpsEvent.map(ev -> ev.latitude).hold(0.0);
         Cell<Double> lon = gpsEvent.map(ev -> ev.longitude).hold(0.0);
-        Cell<Double> alt = gpsEvent.map(ev -> ev.altitude * 0.3048).hold(0.0); // convert feet to meter
+        Cell<Double> alt = gpsEvent.map(ev -> ev.altitude * FEET_TO_METER).hold(0.0); // convert feet to meter
         Cell<Long> time = gpsEvent.snapshot(timer).hold(0L); // event occurs time
 
         // Start filtering
         Cell<Boolean> isValid = new Cell<>(true);
         Cell<Boolean> latValid = lat.lift(latMaxAfterClick, latMinAfterClick, (evLat, max, min)
-                -> max.isPresent() && min.isPresent() && evLat < max.get() && evLat > min.get());
+                -> max.isPresent() && min.isPresent() && evLat <= max.get() && evLat >= min.get());
         Cell<Boolean> lonValid = lon.lift(lonMaxAfterClick, lonMinAfterClick, (evLon, max, min)
-                -> max.isPresent() && min.isPresent() && evLon < max.get() && evLon > min.get());
+                -> max.isPresent() && min.isPresent() && evLon <= max.get() && evLon >= min.get());
         isValid = isValid.lift(latValid, lonValid, (a, b, c) -> a && b && c);
 
         // calculate distance
@@ -277,6 +295,16 @@ public class GpsGUI {
         gui.show();
     }
 
+    // Retrieve the calculated distances for each tracker from the filtered events
+    public static Map<String, Double> getTotalDistancesRecord() {
+        return totalDistancesRecord;
+    }
+
+    // The method only can be used for testing purposes
+    public static void clearTotalDistancesRecord() {
+        totalDistancesRecord.clear();
+    }
+
     // GUI initialization: combine all panels to the window
     private void initializeComponents() {
         // Set up the main frame
@@ -316,7 +344,7 @@ public class GpsGUI {
         frame.add(mainPanel, BorderLayout.CENTER);
     }
 
-    /* Single Display (1) -- Part I Ten simplifier tracker  */
+    /* Single Display (1) GUI -- Part I Ten simplifier tracker  */
     public JPanel SimplifyDisplayPanel(String title) {
         List<List<Cell<String>>> simplyInfo = simplifiedTrackers(gpsEvents);
 
@@ -349,7 +377,7 @@ public class GpsGUI {
         return panel;
     }
 
-    /* Single Display (1) -- Part II Current Event coming in */
+    /* Single Display (1) GUI -- Part II Current Event coming in */
     public JPanel CurrentTrackerPanel(String title) {
         JPanel panel = CurrTrackerGUI(title);
 
@@ -371,7 +399,7 @@ public class GpsGUI {
         return panel;
     }
 
-    /* Single Display (2) */
+    /* Single Display (2) GUI */
     public JPanel FilteredTrackerDisplayPanel(String title) {
         JSplitPane controlPanel = ControlPanel();
 
@@ -389,7 +417,7 @@ public class GpsGUI {
         return mainPanel;
     }
 
-    /* Single Display (2) -- Part I user input textFiles, result label and set button */
+    /* Single Display (2) GUI -- Part I user input textFiles, result label and set button */
     private JSplitPane ControlPanel() {
         // Create ControlPanel
         JSplitPane controlPanel;
@@ -405,7 +433,7 @@ public class GpsGUI {
         fieldLabels.add(new JLabel("LatitudeMax(-90, 90)"));
         fieldLabels.add(new JLabel("LatitudeMin(-90, 90)"));
         fieldLabels.add(new JLabel("LongitudeMax(-180, 180)"));
-        fieldLabels.add(new JLabel("LatitudeMin(-180, 180)"));
+        fieldLabels.add(new JLabel("LongitudeMin(-180, 180)"));
 
         // Input text fields
         List<STextField> textFields = new ArrayList<>();
@@ -487,7 +515,7 @@ public class GpsGUI {
         return controlPanel;
     }
 
-    /* Single Display (2) -- Part II show filtered trackers' info: id, lat, lon, time, distance (each 5-min update) */
+    /* Single Display (2) GUI -- Part II show filtered trackers' info: id, lat, lon, time, distance (each 5-min update) */
     private JPanel FilterEvDisplayPanel(String title) {
         // Create FilterEvDisplayPanel
         JPanel displayPanel = FilterEvDisplayGUI(title);
