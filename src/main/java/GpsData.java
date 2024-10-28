@@ -25,6 +25,6 @@ public class GpsData {
     }
 
     private String formatTime(long time) {
-        return EventProcessor.formatTime(time);
+        return Utils.formatTime(time);
     }
 }

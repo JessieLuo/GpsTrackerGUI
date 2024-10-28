@@ -31,13 +31,13 @@ public class GpsFilterEventDist_Test {
         GpsEvent event4 = new GpsEvent("Test1Tracker1", 10.0, 98.6, 110.0);
 
         // Define the actual travelled distance value for each tracker
-        double tracker1Dist1 = EventProcessor.calculateDistance(
+        double tracker1Dist1 = Utils.calculateDistance(
                 new Position(event1.latitude, event1.longitude, event1.altitude),
                 new Position(event2.latitude, event2.longitude, event2.altitude));
-        double tracker1Dist2 = EventProcessor.calculateDistance(
+        double tracker1Dist2 = Utils.calculateDistance(
                 new Position(event2.latitude, event2.longitude, event2.altitude),
                 new Position(event3.latitude, event3.longitude, event3.altitude));
-        double tracker2Dist3 = EventProcessor.calculateDistance(
+        double tracker2Dist3 = Utils.calculateDistance(
                 new Position(event3.latitude, event3.longitude, event3.altitude),
                 new Position(event4.latitude, event4.longitude, event4.altitude));
         double tracker1ExpectDist = tracker1Dist1 + tracker1Dist2 + tracker2Dist3;
@@ -75,10 +75,10 @@ public class GpsFilterEventDist_Test {
         GpsEvent event5 = new GpsEvent("Test2Tracker1", 8.5, 98.45, 102.0);
 
         // Define the actual travelled distance value for each tracker
-        double tracker1ExpectDist = EventProcessor.calculateDistance(
+        double tracker1ExpectDist = Utils.calculateDistance(
                 new Position(event1.latitude, event1.longitude, event1.altitude),
                 new Position(event5.latitude, event5.longitude, event5.altitude));
-        double tracker2ExpectDist = EventProcessor.calculateDistance(
+        double tracker2ExpectDist = Utils.calculateDistance(
                 new Position(event2.latitude, event2.longitude, event2.altitude),
                 new Position(event4.latitude, event4.longitude, event4.altitude));
         double tracker3ExpectDist = 0.0; // tracker3 no next position
@@ -96,7 +96,7 @@ public class GpsFilterEventDist_Test {
         assertEquals(tracker3ExpectDist, EventProcessor.getTotalDistancesRecord().get("Test2Tracker3"), 0.0001);
 
         // Ensure that positions from Tracker 2 are not used in distance calculations with Tracker 1
-        double mistakeTracker1Dist = EventProcessor.calculateDistance(
+        double mistakeTracker1Dist = Utils.calculateDistance(
                 new Position(event1.latitude, event1.longitude, event1.altitude),
                 new Position(event2.latitude, event2.longitude, event2.altitude));
 
@@ -123,10 +123,10 @@ public class GpsFilterEventDist_Test {
         GpsEvent event5 = new GpsEvent("Test3Tracker1", 8.5, 98.45, 102.0);
 
         // Define the actual travelled distance value for each tracker
-        double tracker1Dist1 = EventProcessor.calculateDistance(
+        double tracker1Dist1 = Utils.calculateDistance(
                 new Position(event2.latitude, event2.longitude, event2.altitude),
                 new Position(event4.latitude, event4.longitude, event4.altitude));
-        double tracker1Dist2 = EventProcessor.calculateDistance(
+        double tracker1Dist2 = Utils.calculateDistance(
                 new Position(event4.latitude, event4.longitude, event4.altitude),
                 new Position(event5.latitude, event5.longitude, event5.altitude));
         double tracker1ExpectDist = tracker1Dist1 + tracker1Dist2;
@@ -142,7 +142,7 @@ public class GpsFilterEventDist_Test {
         assertEquals(tracker1ExpectDist, EventProcessor.getTotalDistancesRecord().get("Test3Tracker1"), 0.1);
 
         // For example, add an event as correct position but actually the event is not
-        double mistakeTracker1Dist = EventProcessor.calculateDistance(
+        double mistakeTracker1Dist = Utils.calculateDistance(
                 new Position(event1.latitude, event1.longitude, event1.altitude),
                 new Position(event2.latitude, event2.longitude, event2.altitude))
                 + tracker1Dist1 + tracker1Dist2;
