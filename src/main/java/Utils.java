@@ -70,8 +70,8 @@ public class Utils {
      * @param pos2 The second position, containing latitude, longitude, and altitude.
      * @return The 3D distance between the two positions in meters, or 0.0 if either position is null.
      */
-    public static double calculateDistance(Position pos1, Position pos2) {
-        if (pos1 == null || pos2 == null) return 0.0;
+    public static int calculateDistance(Position pos1, Position pos2) {
+        if (pos1 == null || pos2 == null) return 0;
 
         // Earth's radius in meters
         double horizontalDistance = getHorizontalDistance(pos1, pos2);
@@ -80,7 +80,7 @@ public class Utils {
         double deltaAlt = pos2.altitude - pos1.altitude;
 
         // Use Pythagorean theorem to calculate the 3D distance
-        return Math.sqrt(horizontalDistance * horizontalDistance + deltaAlt * deltaAlt);
+        return (int) Math.round(Math.sqrt(horizontalDistance * horizontalDistance + deltaAlt * deltaAlt));
     }
 
     /**
