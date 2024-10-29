@@ -32,7 +32,7 @@ public class GpsGUI {
     private final List<Cell<Optional<Double>>> rangeVals = new ArrayList<>(); // Receive user inputs
     private final int eventCount; // define tracker display panel rows
     @SuppressWarnings("FieldCanBeLocal")
-    private final long windowSizeMillis = 30000; // It could be modified when testing
+    private final long windowSizeMillis = 1000 * 60 * 5; // 5-minutes time interval
     // user input fields
     private final STextField latMax = new STextField("", 15);
     private final STextField latMin = new STextField("", 15);
