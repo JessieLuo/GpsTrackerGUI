@@ -39,9 +39,6 @@ public class EventProcessor {
     // Record events for specific tracker
     private static final Map<String, Position> positionsRecord = new HashMap<>(); // separate each tracker with it current position info
     private static final Map<String, Double> totalDistancesRecord = new HashMap<>(); // store each tracker travelled distance
-    private static final Map<String, Long> totalTimeRecord = new HashMap<>(); // record current event fired time
-    /* actually used for distance calculation. recorded only when the time interval is reached */
-    private static final Map<String, Double> timeBasedTotalDistRecord = new HashMap<>();
     private static final double FEET_TO_METER = 0.3048; // convert altitude from feet to meter
 
     /**
@@ -82,14 +79,7 @@ public class EventProcessor {
     public static Cell<String> currentTracker(Stream<GpsEvent>[] gpsEvents) {
         return Transaction.run(() -> {
             // Set up the system time stream and hold the latest time in a cell
-            StreamSink<Long> sysTimeStream = new StreamSink<>();
-            ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
-            scheduler.scheduleAtFixedRate(() -> {
-                long currentTime = System.currentTimeMillis();
-                sysTimeStream.send(currentTime); // Push current system time into the stream
-            }, 0, 1, TimeUnit.SECONDS);
-
-            Cell<Long> sysTimeValue = sysTimeStream.hold(System.currentTimeMillis());
+            Cell<Long> sysTimeValue = periodClock();
 
             // Merge all incoming events as the current event stream
             Stream<GpsEvent> lastGpsStream = gpsEvents[0];
@@ -162,14 +152,12 @@ public class EventProcessor {
                 -> max.isPresent() && min.isPresent() && evLon <= max.get() && evLon >= min.get());
         isValid = isValid.lift(latValid, lonValid, (a, b, c) -> a && b && c);
 
-        // calculate distance
+        // calculate total distance between each filtered events for same tracker
         Cell<Double> dist = isValid.lift(id, lat, lon, alt, time, (valid, pId, p1, p2, p3, t) -> {
             if (valid) {
                 Position currentPosition = new Position(p1, p2, p3, t);
 
                 double distance;
-
-                Long timePassed;
 
                 // If current ID exist, add dist to previous
                 if (positionsRecord.containsKey(pId)) {
@@ -178,21 +166,13 @@ public class EventProcessor {
 
                     // Record each two position distance for the same id
                     totalDistancesRecord.put(pId, totalDistancesRecord.getOrDefault(pId, 0.0) + distance);
-
-                    timePassed = t - lastPosition.time;
-                    totalTimeRecord.put(pId, totalTimeRecord.getOrDefault(pId, 0L) + timePassed);
-
-                    // Record the distance only when each defined interval is reached
-                    if (totalTimeRecord.getOrDefault(pId, 0L) >= windowSizeMillis) {
-                        totalTimeRecord.put(pId, totalTimeRecord.get(pId) - windowSizeMillis); // reset cumulative time
-                        timeBasedTotalDistRecord.put(pId, totalDistancesRecord.getOrDefault(pId, 0.0));
-                    }
                 }
 
                 positionsRecord.put(pId, currentPosition);
 
-                return timeBasedTotalDistRecord.getOrDefault(pId, 0.0);
+                return totalDistancesRecord.getOrDefault(pId, 0.0);
             }
+
             return 0.0; // If an event not met condition, its distance should always 0 that it never track
         });
 
@@ -201,7 +181,30 @@ public class EventProcessor {
         Cell<String> fLat = lat.lift(isValid, (l, r) -> r ? String.valueOf(l) : "");
         Cell<String> fLon = lon.lift(isValid, (l, r) -> r ? String.valueOf(l) : "");
         Cell<String> fTime = time.lift(isValid, (l, r) -> r ? Utils.formatTime(l) : "");
-        Cell<String> fDist = dist.lift(isValid, (l, r) -> r ? String.valueOf(l) : "");
+
+        // Use periodically fired stream to update the Cell internal value
+        StreamSink<Long> windowStartUpdate = new StreamSink<>();
+        StreamSink<String> distanceUpdateStream = new StreamSink<>();
+        Cell<Long> sysTimeValue = periodClock();
+        Cell<Long> clickTime = setButton.sClicked.snapshot(timer).hold(0L);
+        Cell<Long> windowStartTime = windowStartUpdate.hold(clickTime.sample());
+        Cell<String> timeBasedDistance = distanceUpdateStream.hold("");
+        /* The distance would be updated if time window size satisfied */
+        Cell<String> fDist = fId.lift(windowStartTime, sysTimeValue, dist, timeBasedDistance, (Id, startT, sysT, totalDist, realDistVal) -> {
+            if (!Id.isEmpty()) {
+                long elapsed = sysT - startT;
+
+                // Trigger the stream update to refresh windowStartTime if the condition is met
+                if (elapsed >= windowSizeMillis) {
+                    windowStartUpdate.send(sysT);
+                    distanceUpdateStream.send(String.valueOf(totalDist));
+                }
+
+                return realDistVal;
+            }
+
+            return "";
+        });
 
         filterResults.add(fId);
         filterResults.add(fLat);
@@ -210,6 +213,18 @@ public class EventProcessor {
         filterResults.add(fDist);
 
         return filterResults;
+    }
+
+    // A helper method to provide external clock to let FPR get the system time
+    private static Cell<Long> periodClock() {
+        StreamSink<Long> sysTimeStream = new StreamSink<>();
+        ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+        scheduler.scheduleAtFixedRate(() -> {
+            long currentTime = System.currentTimeMillis();
+            sysTimeStream.send(currentTime); // Push current system time into the stream
+        }, 0, 1, TimeUnit.SECONDS);
+
+        return sysTimeStream.hold(System.currentTimeMillis());
     }
 
     // The method only used for test purpose
